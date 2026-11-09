@@ -92,5 +92,10 @@
   "mergeTo": "Şuna taşı",
   "mergeAction": "Eşleştir",
   "mergeConfirm": "{from} içindeki her iş {to} altına taşınsın mı? {from} adıyla gelen yeni işler de oraya gider.",
+  "sortLabel": "Sırala",
+  "sort_newest": "En yeni üstte",
+  "sort_oldest": "En eski üstte",
+  "sort_urgent": "Acil olanlar üstte",
+  "sort_project": "Projeye göre",
   "unsorted": "Diğer"
 }

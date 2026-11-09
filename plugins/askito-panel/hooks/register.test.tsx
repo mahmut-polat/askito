@@ -169,6 +169,17 @@ test('rows are grouped by project and then by day', async ($, on) => {
   await ui.unmount()
 })
 
+test('the newest item is on top, and the sort can be changed', async ($, on) => {
+  await start($, on, { items: [ITEM, OTHER] })
+  const ui = await $.ui.mount(PANE)
+  const position = async (title: string) => (await ui.findAll({ type: 'Text' })).findIndex(found => found.text === title)
+  expect(await position('Pick a colour')).toBeLessThan(await position('Run the migration?'))
+  await ui.select({ key: 'sort', value: 'oldest' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect(await position('Run the migration?')).toBeLessThan(await position('Pick a colour'))
+  await ui.unmount()
+})
+
 test('with one project there is no filter row', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount(PANE)

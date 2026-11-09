@@ -92,5 +92,10 @@
   "mergeTo": "Into",
   "mergeAction": "Map",
   "mergeConfirm": "Move every item from {from} into {to}? New items under {from} will go there too.",
+  "sortLabel": "Sort",
+  "sort_newest": "Newest first",
+  "sort_oldest": "Oldest first",
+  "sort_urgent": "Urgent first",
+  "sort_project": "By project",
   "unsorted": "Unsorted"
 }

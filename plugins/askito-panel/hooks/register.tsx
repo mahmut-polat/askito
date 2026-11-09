@@ -43,6 +43,7 @@ const selected = atom({ plugin: 'askito-panel', key: 'selected' } as const, null
 const filter = atom({ plugin: 'askito-panel', key: 'filter' } as const, null, { shape: 'filter-1' })
 const agents = atom({ plugin: 'askito-panel', key: 'agents' } as const, [], { shape: 'agents-1' })
 const view = atom({ plugin: 'askito-panel', key: 'view' } as const, 'waiting', { shape: 'view-1' })
+const sortMode = atom({ plugin: 'askito-panel', key: 'sort' } as const, 'newest', { shape: 'sort-1' })
 const catalog = atom({ plugin: 'askito-panel', key: 'catalog' } as const, {}, { shape: 'catalog-1' })
 const status = atom({ plugin: 'askito-panel', key: 'status' } as const, 'loading', { shape: 'status-1' })
 const error = atom({ plugin: 'askito-panel', key: 'error' } as const, false, { shape: 'error-1' })
@@ -75,7 +76,7 @@ function dayLabel(key: string) {
   return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: year === now.getFullYear() ? undefined : 'numeric' }).format(then)
 }
 
-// Projects with the most items first; inside a project, the newest day first.
+// Items arrive sorted, so groups and days keep the order of their first item.
 function groupItems(items: InboxItem[]) {
   const projects = new Map<string, Map<string, InboxItem[]>>()
   for (const item of items) {
@@ -87,9 +88,8 @@ function groupItems(items: InboxItem[]) {
   return [...projects.entries()]
     .map(([project, days]) => ({
       project,
-      days: [...days.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([key, list]) => ({ key, label: dayLabel(key), items: list })),
+      days: [...days.entries()].map(([key, list]) => ({ key, label: dayLabel(key), items: list })),
     }))
-    .sort((a, b) => b.days.flatMap(day => day.items).length - a.days.flatMap(day => day.items).length || a.project.localeCompare(b.project))
 }
 
 function chatState(item: InboxItem, t: (key: string) => string) {
@@ -158,8 +158,17 @@ function request($: EngineInterface, link: Connection, path: string, body?: obje
   })
 }
 
-function order(list: InboxItem[]) {
-  return [...list].sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.createdAt.localeCompare(b.createdAt))
+function sortItems(list: InboxItem[], mode: string) {
+  const newest = (a: InboxItem, b: InboxItem) => b.createdAt.localeCompare(a.createdAt)
+  const compare =
+    mode === 'oldest'
+      ? (a: InboxItem, b: InboxItem) => newest(b, a)
+      : mode === 'urgent'
+        ? (a: InboxItem, b: InboxItem) => Number(b.urgent) - Number(a.urgent) || newest(a, b)
+        : mode === 'project'
+          ? (a: InboxItem, b: InboxItem) => a.project.localeCompare(b.project) || newest(a, b)
+          : newest
+  return [...list].sort(compare)
 }
 
 async function loadCatalog($: EngineInterface, link: Connection) {
@@ -179,12 +188,12 @@ async function refresh($: EngineInterface) {
     await loadCatalog($, link)
     const res = await request($, link, '/api/items?status=open')
     if (!res.ok) throw new Error(String(res.status))
-    const next = order((JSON.parse(res.text) as { items: InboxItem[] }).items.filter(item => !item.laterAt))
+    const next = (JSON.parse(res.text) as { items: InboxItem[] }).items.filter(item => !item.laterAt)
     const current = await read($, items)
     if (JSON.stringify(current) !== JSON.stringify(next)) await update($, items, () => next)
     const answered = await request($, link, '/api/items?status=answered')
     const nextAgents = answered.ok
-      ? (JSON.parse(answered.text) as { items: InboxItem[] }).items.sort((a, b) => Number(!a.deliveredAt) - Number(!b.deliveredAt))
+      ? (JSON.parse(answered.text) as { items: InboxItem[] }).items
       : await read($, agents)
     if (JSON.stringify(await read($, agents)) !== JSON.stringify(nextAgents)) await update($, agents, () => nextAgents)
     if ((await read($, status)) !== 'ready') await update($, status, () => 'ready')
@@ -221,11 +230,12 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Input, Markdown, Link, Svg } = $.ui.resolve(e)
+    const { Box, Text, Button, Input, Select, Markdown, Link, Svg } = $.ui.resolve(e)
     const list = await read($, items)
     const picked = await read($, selected)
     const chosen = await read($, filter)
     const others = await read($, agents)
+    const sorting = await read($, sortMode)
     const mode = await read($, view)
     const words = await read($, catalog)
     const state = await read($, status)
@@ -246,7 +256,7 @@ export const register: Register = on => {
     const shown = active ? source.filter(item => item.project === active) : source
     // Nothing opens by itself: answering one item must not unfold the next.
     const openId = shown.some(item => item.id === picked) ? picked : null
-    const groups = groupItems(shown)
+    const groups = groupItems(sortItems(shown, sorting))
     const projectName = (name: string) => (name === 'unsorted' ? t('unsorted') : name)
     const chip = (key: string, label: string, count: number, value: string | null) => (
       <Button key={`project-${key}`} variant={active === value ? 'primary' : 'secondary'} onPress={() => void update($, filter, () => value)}>
@@ -415,6 +425,13 @@ export const register: Register = on => {
             {projects.map(name => chip(name, projectName(name), source.filter(item => item.project === name).length, name))}
           </Box>
         ) : null}
+        <Select
+          key="sort"
+          label={t('sortLabel')}
+          value={sorting}
+          options={['newest', 'oldest', 'urgent', 'project'].map(value => ({ value, label: t(`sort_${value}`) }))}
+          onSelect={value => void update($, sortMode, () => value)}
+        />
         {shown.length ? (
           groups.map(group => (
             <Box flexDirection="column" gap="md">

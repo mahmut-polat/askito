@@ -30,7 +30,7 @@ const KIND_ICON = {
 
 const app = document.getElementById('app');
 const live = document.getElementById('live');
-const state = { directory: { projects: [], sessions: [] }, mergeOpen: false, mergeFrom: '', mergeTo: '', items: [], project: null, tab: 'waiting', selected: null, query: '', busy: null, error: null, sessionLost: false };
+const state = { sort: 'newest', directory: { projects: [], sessions: [] }, mergeOpen: false, mergeFrom: '', mergeTo: '', items: [], project: null, tab: 'waiting', selected: null, query: '', busy: null, error: null, sessionLost: false };
 const drafts = new Map();
 let catalog = {};
 let language = 'en';
@@ -198,7 +198,7 @@ function dayLabel(key) {
   return new Intl.DateTimeFormat(language, { day: 'numeric', month: 'long', year: year === now.getFullYear() ? undefined : 'numeric' }).format(then);
 }
 
-// Projects with the most items first; inside a project, the newest day first.
+// Items arrive sorted, so groups and days keep the order of their first item.
 function groupItems(items) {
   const projects = new Map();
   for (const item of items) {
@@ -211,9 +211,8 @@ function groupItems(items) {
     .map(([project, days]) => ({
       project,
       count: [...days.values()].flat().length,
-      days: [...days.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([key, list]) => ({ key, label: dayLabel(key), items: list })),
-    }))
-    .sort((a, b) => b.count - a.count || a.project.localeCompare(b.project));
+      days: [...days.entries()].map(([key, list]) => ({ key, label: dayLabel(key), items: list })),
+    }));
 }
 
 function currentTab() {
@@ -222,7 +221,6 @@ function currentTab() {
 
 function visibleItems() {
   const tab = currentTab();
-  const { status } = tab;
   const query = state.query.trim().toLocaleLowerCase(language);
   const items = state.items.filter((item) => {
     if (!inTab(item, tab)) return false;
@@ -230,12 +228,14 @@ function visibleItems() {
     if (!query) return true;
     return [item.title, item.body, item.chat, item.project].some((field) => field?.toLocaleLowerCase(language).includes(query));
   });
-  if (status === 'open') {
-    // Urgent first, then oldest first, so nothing sinks to the bottom.
-    return items.sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.createdAt.localeCompare(b.createdAt));
-  }
-  // An answer no chat has picked up is the one that needs the user's eye.
-  return items.sort((a, b) => Number(!a.deliveredAt) - Number(!b.deliveredAt) || b.updatedAt.localeCompare(a.updatedAt));
+  const newest = (a, b) => b.createdAt.localeCompare(a.createdAt);
+  const compare = {
+    newest,
+    oldest: (a, b) => newest(b, a),
+    urgent: (a, b) => Number(b.urgent) - Number(a.urgent) || newest(a, b),
+    project: (a, b) => a.project.localeCompare(b.project, language) || newest(a, b),
+  };
+  return items.sort(compare[state.sort] ?? newest);
 }
 
 async function request(method, url, body) {
@@ -779,6 +779,19 @@ function renderMain() {
           ),
         ),
       ),
+      h(
+        'select',
+        {
+          class: 'sort',
+          'aria-label': t('sortLabel'),
+          onchange: (event) => {
+            state.sort = event.target.value;
+            storage.set('askito.sort', state.sort);
+            render();
+          },
+        },
+        ['newest', 'oldest', 'urgent', 'project'].map((value) => h('option', { value, selected: value === state.sort }, t(`sort_${value}`))),
+      ),
       h('input', {
         class: 'search',
         type: 'search',
@@ -835,6 +848,7 @@ document.addEventListener('keydown', (event) => {
 
 async function start() {
   applyTheme(storage.get('askito.theme') ?? 'auto');
+  state.sort = storage.get('askito.sort') ?? 'newest';
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(storage.get('askito.theme') ?? 'auto'));
   const saved = storage.get('askito.lang');
   await loadLanguage(saved ?? (navigator.language ?? 'en').slice(0, 2).toLowerCase());

@@ -272,6 +272,16 @@ kbd {
   font-weight: 600;
 }
 
+.sort {
+  min-height: 34px;
+  margin-inline-start: auto;
+  margin-bottom: var(--space-2);
+  padding-inline: var(--space-1);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
 .search {
   inline-size: 200px;
   min-inline-size: 0;

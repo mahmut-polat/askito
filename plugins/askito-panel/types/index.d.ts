@@ -31,6 +31,7 @@ declare module 'claude-code' {
       filter: Shaped<string | null>
       agents: Shaped<InboxItem[]>
       view: Shaped<'waiting' | 'agents'>
+      sort: Shaped<string>
       catalog: Shaped<Catalog>
       status: Shaped<'loading' | 'ready' | 'offline'>
       error: Shaped<boolean>
