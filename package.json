@@ -23,7 +23,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/askito.test.js"
+    "test": "node --test --test-concurrency=1 --test-timeout=60000 test/askito.test.js"
   },
   "repository": {
     "type": "git",
