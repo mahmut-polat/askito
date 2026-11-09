@@ -1,0 +1,38 @@
+{
+  "name": "askbell",
+  "version": "0.1.0",
+  "description": "One local inbox for every question your AI coding chats need to ask you.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "askbell": "bin/askbell.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "skill",
+    "INSTALL.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mahmut-polat/askbell.git"
+  },
+  "keywords": [
+    "mcp",
+    "ai-agents",
+    "human-in-the-loop",
+    "claude-code",
+    "codex",
+    "cursor",
+    "inbox"
+  ]
+}

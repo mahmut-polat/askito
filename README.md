@@ -1,0 +1,121 @@
+# askbell
+
+One local inbox for every question your AI coding chats need to ask you.
+
+When you run several chats at once, each one stops at a different moment to ask something, and you end up clicking through tabs to find who is blocked. With askbell, chats post their questions, approvals and human-only jobs to one page, sorted by project. You answer there, and the chat that asked carries on.
+
+![The askbell inbox](docs/inbox.jpg)
+
+## Install
+
+```bash
+npx -y github:mahmut-polat/askbell setup
+```
+
+Or paste this into any AI coding tool:
+
+```text
+Read https://raw.githubusercontent.com/mahmut-polat/askbell/main/INSTALL.md and follow it.
+```
+
+Setup needs Node 20 or newer and has no other dependencies. It copies askbell to `~/.askbell`, finds the AI tools on your machine and connects each one. Restart open chats afterwards, then open the inbox:
+
+```bash
+~/.askbell/bin/askbell open
+```
+
+Bookmark the page if you like. The server starts by itself the first time a chat posts, or when you run `askbell open`.
+
+Add `--dry-run` to see which files setup would touch, or `--tools claude,cursor` to choose. Setup copies each config file to `~/.askbell/backups` before its first change, and it leaves alone any JSON file it cannot fully parse (it prints what to add by hand).
+
+## What you can do on the page
+
+Chats post three kinds of item:
+
+| Kind | Your controls |
+|---|---|
+| Question | Pick an option, or type your own answer |
+| Approval | Approve, Reject, or send a comment |
+| Your task | I did it, I can't do this, or send a comment |
+
+Any item can be removed from the list, which also tells a waiting chat to drop the subject. Items move through four tabs: Waiting, With chats, Done and Removed. You can reopen anything. The sidebar splits everything by project and counts what is waiting in each.
+
+Each open item says whether its chat is waiting right now or will collect your answer the next time it runs. New items raise a desktop notification and update the tab title. The page comes in English and Turkish, in light and dark. To add a language, drop a file in `web/i18n` and add one line each in `web/app.js` and `src/server.js`.
+
+Keyboard: `J` and `K` move, `1` to `9` pick an option, `Ctrl+Enter` or `Cmd+Enter` sends from the comment box.
+
+## How an answer reaches the chat
+
+Coding tools can't be woken from the outside, so each chat has to be listening. askbell gives it three ways to do that, and the installed instructions tell the agent to use the first one its tool supports:
+
+| Tool can | Agent does |
+|---|---|
+| Run a background command and wake when it exits (Claude Code) | Runs `askbell ask ... --wait` in the background and keeps working |
+| Call MCP tools | Calls `askbell_ask`, then repeats `askbell_wait` in rounds short enough for the client's tool timeout |
+| Only run foreground commands | Repeats `askbell wait ID --timeout 100` |
+
+If the chat has already ended, your answer stays in the inbox. The next session in that repository runs `askbell pickup`, finds it, and acts on it.
+
+## Supported tools
+
+| Tool | Setup writes |
+|---|---|
+| Claude Code | MCP server, skill, `~/.claude/CLAUDE.md` block |
+| OpenAI Codex | MCP server, skill, `~/.codex/AGENTS.md` block |
+| Gemini CLI | MCP server, skill, `~/.gemini/GEMINI.md` block |
+| Cursor | MCP server, skill |
+| Windsurf | MCP server, skill, global rules block |
+| VS Code Copilot | MCP server |
+| GitHub Copilot CLI | MCP server |
+| Cline | MCP server |
+| Roo Code | MCP server |
+| Kiro | MCP server, steering file |
+| Zed | MCP server |
+
+Any other tool with a shell works through the command line. Run `askbell instructions` and paste the output into that tool's rules file. A skill also lands in `~/.agents/skills` for tools that read that folder.
+
+To skip permission prompts in Claude Code, allow `mcp__askbell` and `Bash(~/.askbell/bin/askbell:*)` yourself. Setup never changes a tool's permission settings.
+
+macOS and Linux are covered by the test suite. The Windows code paths exist but have not been run yet, so reports are welcome.
+
+## Command line
+
+```text
+askbell ask "Title"       --body TEXT --option "Label::Description" --recommend 1 --wait
+askbell approve "Title"   --body TEXT --urgent --wait
+askbell task "Title"      --body TEXT --chat "short name" --wait
+askbell wait ID           --timeout 100
+askbell pickup
+askbell reply ID "Follow-up, puts the item back in Waiting"
+askbell done ID "What happened"
+askbell list --status open
+askbell alias "Friendly name" /path/to/repo
+```
+
+`--wait` and `wait` exit with 0 when answered, 3 when you removed the item, and 4 on timeout. Projects come from the git repository, and every worktree of a repository lands in the same project. Run `askbell --help` for the rest.
+
+## Security and privacy
+
+Everything stays on your machine, in `~/.askbell`. There is no account, telemetry or cloud service.
+
+The server listens on `127.0.0.1` only. It refuses unknown `Host` headers, which blocks DNS rebinding, and refuses browser posts from any other origin. Agents and the browser use separate secrets, and the answer routes accept only the browser's, so an agent calling the API cannot approve its own request. Everything an agent writes is rendered as text under a strict content security policy.
+
+An agent running as your OS user can still read the browser secret from disk. These protections stop accidents and misuse from web pages. They do not sandbox a hostile program on your own account.
+
+## Uninstall
+
+```bash
+~/.askbell/bin/askbell uninstall
+```
+
+This removes the MCP entries, skills and rule blocks, and keeps your inbox data. Add `--purge` to delete that too.
+
+## Development
+
+```bash
+npm test
+```
+
+## License
+
+MIT
