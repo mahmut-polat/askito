@@ -181,6 +181,41 @@ function inTab(item, tab) {
   return item.status === tab.status && (tab.status !== 'open' || Boolean(item.laterAt) === Boolean(tab.later));
 }
 
+function dayKey(iso) {
+  const date = new Date(iso);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function dayLabel(key) {
+  const [year, month, day] = key.split('-').map(Number);
+  const then = new Date(year, month - 1, day);
+  const now = new Date();
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - then) / 86400000);
+  if (days <= 1) {
+    const word = new Intl.RelativeTimeFormat(language, { numeric: 'auto' }).format(-days, 'day');
+    return word.charAt(0).toLocaleUpperCase(language) + word.slice(1);
+  }
+  return new Intl.DateTimeFormat(language, { day: 'numeric', month: 'long', year: year === now.getFullYear() ? undefined : 'numeric' }).format(then);
+}
+
+// Projects with the most items first; inside a project, the newest day first.
+function groupItems(items) {
+  const projects = new Map();
+  for (const item of items) {
+    const days = projects.get(item.project) ?? new Map();
+    const key = dayKey(item.createdAt);
+    days.set(key, [...(days.get(key) ?? []), item]);
+    projects.set(item.project, days);
+  }
+  return [...projects.entries()]
+    .map(([project, days]) => ({
+      project,
+      count: [...days.values()].flat().length,
+      days: [...days.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([key, list]) => ({ key, label: dayLabel(key), items: list })),
+    }))
+    .sort((a, b) => b.count - a.count || a.project.localeCompare(b.project));
+}
+
 function currentTab() {
   return TABS.find((tab) => tab.id === state.tab);
 }
@@ -233,7 +268,8 @@ async function refresh() {
 
 function keepSelection() {
   const items = visibleItems();
-  if (!items.some((item) => item.id === state.selected)) state.selected = state.tab === 'waiting' ? (items[0]?.id ?? null) : null;
+  // Nothing opens by itself: answering one item must not unfold the next.
+  if (!items.some((item) => item.id === state.selected)) state.selected = null;
 }
 
 async function act(id, action, body = {}) {
@@ -614,7 +650,19 @@ function renderMain() {
   const count = inProject.filter((item) => inTab(item, tab)).length;
   let content;
   if (items.length) {
-    content = [h('ol', { class: 'list' }, items.map(renderRow)), h('p', { class: 'list-end' }, t('listEnd'))];
+    let number = -1;
+    const groups = groupItems(items);
+    content = [
+      ...groups.map((group) =>
+        h(
+          'section',
+          { class: 'group' },
+          !state.project && groups.length > 1 ? h('h2', { class: 'group-head' }, projectLabel(group.project), h('span', { class: 'group-count' }, String(group.count))) : null,
+          group.days.flatMap((day) => [h('h3', { class: 'day-head' }, day.label), h('ol', { class: 'list' }, day.items.map((item) => renderRow(item, (number += 1))))]),
+        ),
+      ),
+      h('p', { class: 'list-end' }, t('listEnd')),
+    ];
   } else if (state.query.trim()) {
     content = h('div', { class: 'empty' }, h('strong', {}, t('noMatch')));
   } else {
@@ -686,7 +734,7 @@ function render() {
 }
 
 function moveSelection(step) {
-  const items = visibleItems();
+  const items = groupItems(visibleItems()).flatMap((group) => group.days.flatMap((day) => day.items));
   if (!items.length) return;
   const index = items.findIndex((item) => item.id === state.selected);
   const next = items[Math.min(items.length - 1, Math.max(0, index === -1 ? 0 : index + step))];

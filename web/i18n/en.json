@@ -78,5 +78,7 @@
   "eventProgress": "Chat reports",
   "eventResult": "Result",
   "eventQuestion": "Chat asks",
+  "panelOpen": "Open",
+  "panelClose": "Close",
   "unsorted": "Unsorted"
 }

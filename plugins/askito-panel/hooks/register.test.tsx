@@ -62,7 +62,7 @@ async function start($: any, on: any, options: { installed?: boolean; items?: ob
 test('the pane numbers an open item and names its kind', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount(PANE)
-  expect((await ui.find({ type: 'Button', text: /Run the migration/ }))?.text).toBe('Run the migration?')
+  expect((await ui.find({ type: 'Text', text: /Run the migration/ }))?.text).toBe('Run the migration?')
   expect((await ui.find({ type: 'Text', text: '1' }))?.text).toBe('1')
   expect((await ui.find({ type: 'Text', text: 'Approval' }))?.text).toBe('Approval')
   expect(await ui.find({ type: 'Svg' })).toBeDefined()
@@ -72,6 +72,8 @@ test('the pane numbers an open item and names its kind', async ($, on) => {
 test('approving posts the answer as the browser would', async ($, on) => {
   const sent = await start($, on)
   const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'toggle-abc123' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
   await ui.press({ key: 'yes-abc123' })
   for (let i = 0; i < 100; i += 1) await Promise.resolve()
   expect(sent).toHaveLength(1)
@@ -85,6 +87,8 @@ test('approving posts the answer as the browser would', async ($, on) => {
 test('Later sets the item aside', async ($, on) => {
   const sent = await start($, on)
   const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'toggle-abc123' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
   await ui.press({ key: 'later-abc123' })
   for (let i = 0; i < 100; i += 1) await Promise.resolve()
   expect(sent[0].url).toBe('http://127.0.0.1:4517/api/items/abc123/later')
@@ -95,7 +99,7 @@ test('Later sets the item aside', async ($, on) => {
 test('items set aside stay out of the panel', async ($, on) => {
   await start($, on, { items: [{ ...ITEM, laterAt: '2026-11-09T11:00:00.000Z' }] })
   const ui = await $.ui.mount(PANE)
-  expect(await ui.find({ type: 'Button', text: /Run the migration/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Run the migration/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -114,11 +118,11 @@ test('a project filter narrows the list', async ($, on) => {
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'project-storefront' })
   for (let i = 0; i < 100; i += 1) await Promise.resolve()
-  expect(await ui.find({ type: 'Button', text: /Run the migration/ })).toBeUndefined()
-  expect((await ui.find({ type: 'Button', text: /Pick a colour/ }))?.text).toBe('Pick a colour')
+  expect(await ui.find({ type: 'Text', text: /Run the migration/ })).toBeUndefined()
+  expect((await ui.find({ type: 'Text', text: /Pick a colour/ }))?.text).toBe('Pick a colour')
   await ui.press({ key: 'project-all' })
   for (let i = 0; i < 100; i += 1) await Promise.resolve()
-  expect((await ui.find({ type: 'Button', text: /Run the migration/ }))?.text).toBe('Run the migration?')
+  expect((await ui.find({ type: 'Text', text: /Run the migration/ }))?.text).toBe('Run the migration?')
   await ui.unmount()
 })
 
@@ -142,6 +146,26 @@ test('every row shows the date and time it was asked', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount(PANE)
   expect((await ui.find({ type: 'Text', text: /Nov/ }))?.text).toMatch(/\d{1,2}:\d{2}/)
+  await ui.unmount()
+})
+
+test('no item opens by itself, and only the pressed one opens', async ($, on) => {
+  await start($, on, { items: [ITEM, { ...OTHER }] })
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ key: 'yes-abc123' })).toBeUndefined()
+  await ui.press({ key: 'toggle-def456' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect(await ui.find({ key: 'yes-abc123' })).toBeUndefined()
+  expect(await ui.find({ key: 'comment-def456' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('rows are grouped by project and then by day', async ($, on) => {
+  await start($, on, { items: [ITEM, OTHER] })
+  const ui = await $.ui.mount(PANE)
+  const texts = (await ui.findAll({ type: 'Text' })).map(found => found.text)
+  expect(texts.filter(text => text === 'billing').length).toBeGreaterThanOrEqual(2)
+  expect(texts.some(text => /Nov 9|today|yesterday/i.test(text ?? ''))).toBe(true)
   await ui.unmount()
 })
 

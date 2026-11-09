@@ -78,5 +78,7 @@
   "eventProgress": "Sohbet bildirdi",
   "eventResult": "Sonuç",
   "eventQuestion": "Sohbet soruyor",
+  "panelOpen": "Aç",
+  "panelClose": "Kapat",
   "unsorted": "Diğer"
 }

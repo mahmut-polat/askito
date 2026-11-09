@@ -58,6 +58,40 @@ function stamp(iso: string) {
   return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year, hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
+function dayKey(iso: string) {
+  const date = new Date(iso)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function dayLabel(key: string) {
+  const [year, month, day] = key.split('-').map(Number)
+  const then = new Date(year, month - 1, day)
+  const now = new Date()
+  const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - then.getTime()) / 86400000)
+  if (days <= 1) {
+    const word = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' }).format(-days, 'day')
+    return word.charAt(0).toLocaleUpperCase(locale) + word.slice(1)
+  }
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'long', year: year === now.getFullYear() ? undefined : 'numeric' }).format(then)
+}
+
+// Projects with the most items first; inside a project, the newest day first.
+function groupItems(items: InboxItem[]) {
+  const projects = new Map<string, Map<string, InboxItem[]>>()
+  for (const item of items) {
+    const days = projects.get(item.project) ?? new Map<string, InboxItem[]>()
+    const key = dayKey(item.createdAt)
+    days.set(key, [...(days.get(key) ?? []), item])
+    projects.set(item.project, days)
+  }
+  return [...projects.entries()]
+    .map(([project, days]) => ({
+      project,
+      days: [...days.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([key, list]) => ({ key, label: dayLabel(key), items: list })),
+    }))
+    .sort((a, b) => b.days.flatMap(day => day.items).length - a.days.flatMap(day => day.items).length || a.project.localeCompare(b.project))
+}
+
 function chatState(item: InboxItem, t: (key: string) => string) {
   if (!item.answer) return null
   if (!item.deliveredAt) return { label: t('stateNotReceived'), tone: 'warn' as const }
@@ -80,9 +114,6 @@ function eventLines(item: InboxItem, t: (key: string) => string) {
   if (item.deliveredAt) events.push({ at: item.deliveredAt, line: `${stamp(item.deliveredAt)}  ${t('eventReceived')}` })
   return events.sort((a, b) => a.at.localeCompare(b.at)).map(event => event.line)
 }
-
-// `selected` holds this value when the person has folded every row away.
-const COLLAPSED = 'none'
 
 // A draft is typed by one person in one pane, and redrawing must not touch it.
 const drafts: Record<string, string> = {}
@@ -129,11 +160,13 @@ function order(list: InboxItem[]) {
 }
 
 async function loadCatalog($: EngineInterface, link: Connection) {
-  if (Object.keys(await read($, catalog)).length) return
   const wanted = link.language ?? new Intl.DateTimeFormat().resolvedOptions().locale.slice(0, 2)
   const language = ['en', 'tr'].includes(wanted) ? wanted : 'en'
   const res = await request($, link, `/i18n/${language}.json`)
-  if (res.ok) await update($, catalog, () => JSON.parse(res.text) as Catalog)
+  if (!res.ok) return
+  // Read every time: a stored copy from an older version shows new wording as raw keys.
+  const next = JSON.parse(res.text) as Catalog
+  if (JSON.stringify(await read($, catalog)) !== JSON.stringify(next)) await update($, catalog, () => next)
 }
 
 async function refresh($: EngineInterface) {
@@ -146,14 +179,11 @@ async function refresh($: EngineInterface) {
     const next = order((JSON.parse(res.text) as { items: InboxItem[] }).items.filter(item => !item.laterAt))
     const current = await read($, items)
     if (JSON.stringify(current) !== JSON.stringify(next)) await update($, items, () => next)
-    const picked = await read($, selected)
     const answered = await request($, link, '/api/items?status=answered')
     const nextAgents = answered.ok
       ? (JSON.parse(answered.text) as { items: InboxItem[] }).items.sort((a, b) => Number(!a.deliveredAt) - Number(!b.deliveredAt))
       : await read($, agents)
     if (JSON.stringify(await read($, agents)) !== JSON.stringify(nextAgents)) await update($, agents, () => nextAgents)
-    const known = next.some(item => item.id === picked) || nextAgents.some(item => item.id === picked)
-    if (picked !== COLLAPSED && !known) await update($, selected, () => next[0]?.id ?? null)
     if ((await read($, status)) !== 'ready') await update($, status, () => 'ready')
   } catch {
     if ((await read($, status)) !== 'offline') await update($, status, () => 'offline')
@@ -211,7 +241,9 @@ export const register: Register = on => {
     const projects = [...new Set(source.map(item => item.project))].sort((a, b) => a.localeCompare(b))
     const active = chosen && projects.includes(chosen) ? chosen : null
     const shown = active ? source.filter(item => item.project === active) : source
-    const openId = picked === COLLAPSED ? null : shown.some(item => item.id === picked) ? picked : (shown[0]?.id ?? null)
+    // Nothing opens by itself: answering one item must not unfold the next.
+    const openId = shown.some(item => item.id === picked) ? picked : null
+    const groups = groupItems(shown)
     const projectName = (name: string) => (name === 'unsorted' ? t('unsorted') : name)
     const chip = (key: string, label: string, count: number, value: string | null) => (
       <Button key={`project-${key}`} variant={active === value ? 'primary' : 'secondary'} onPress={() => void update($, filter, () => value)}>
@@ -306,6 +338,7 @@ export const register: Register = on => {
       </Button>
     )
 
+    let number = 0
     const row = (item: InboxItem, index: number) => {
       const state = mode === 'agents' ? chatState(item, t) : null
       const isOpen = item.id === openId
@@ -313,14 +346,17 @@ export const register: Register = on => {
         <Box flexDirection="row" gap="sm" alignItems="flex-start">
           <Box width={3} flexShrink={0} paddingTop="xs">
             <Text tabular weight="semibold" dimColor>
-              {index + 1}
+              {index}
             </Text>
           </Box>
           <Svg source={kindSvg(item.kind)} alt={t(KIND_LABEL[item.kind])} width={32} height={32} />
           <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-            <Button key={`row-${item.id}`} plain onPress={() => void update($, selected, () => (isOpen ? COLLAPSED : item.id))}>
-              <Text weight="semibold">{item.title}</Text>
-            </Button>
+            <Box flexDirection="row" justifyContent="space-between" alignItems="flex-start" gap="sm">
+              <Box flexShrink={1} minWidth={0}>
+                <Text weight="semibold">{item.title}</Text>
+              </Box>
+              <Button key={`toggle-${item.id}`} dimColor label={isOpen ? t('panelClose') : t('panelOpen')} onPress={() => void update($, selected, () => (isOpen ? null : item.id))} />
+            </Box>
             <Box flexDirection="row" flexWrap="wrap" columnGap="sm" alignItems="center">
               <Box backgroundColor={badgeColor(item.project)} paddingX={1}>
                 <Text size="caption" weight="medium">
@@ -377,7 +413,26 @@ export const register: Register = on => {
           </Box>
         ) : null}
         {shown.length ? (
-          shown.map(row)
+          groups.map(group => (
+            <Box flexDirection="column" gap="md">
+              {projects.length > 1 && !active ? (
+                <Box flexDirection="row" alignItems="center" gap="sm">
+                  <Text weight="bold">{projectName(group.project)}</Text>
+                  <Text size="caption" dimColor tabular>
+                    {group.days.reduce((sum, day) => sum + day.items.length, 0)}
+                  </Text>
+                </Box>
+              ) : null}
+              {group.days.map(day => (
+                <Box flexDirection="column" gap="md">
+                  <Text size="caption" weight="semibold" dimColor>
+                    {day.label}
+                  </Text>
+                  {day.items.map(item => row(item, (number += 1)))}
+                </Box>
+              ))}
+            </Box>
+          ))
         ) : (
           <Box flexDirection="column" gap="xs">
             <Text weight="semibold">{t(mode === 'agents' ? 'emptyAgentsTitle' : 'emptyWaitingTitle')}</Text>
