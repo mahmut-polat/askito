@@ -7,6 +7,29 @@ const PANE = 'askito-inbox'
 const POLL_MS = 4000
 const KIND_LABEL = { question: 'kindQuestion', approval: 'kindApproval', task: 'kindTask' } as const
 
+// Lucide shapes, one silhouette and color per kind, matching the inbox page.
+// These tones stay legible on both the light and the dark theme.
+const KIND_ICON = {
+  question: {
+    color: '#4f8fe8',
+    shapes: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  },
+  approval: {
+    color: '#c9922e',
+    shapes:
+      '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  },
+  task: {
+    color: '#a678e2',
+    shapes: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  },
+} as const
+
+function kindSvg(kind: InboxItem['kind']) {
+  const { color, shapes } = KIND_ICON[kind]
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="${color}" fill-opacity="0.18"/><g transform="translate(6 6) scale(0.8333)" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shapes}</g></svg>`
+}
+
 const items = atom({ plugin: 'askito-panel', key: 'items' } as const, [], { shape: 'items-1' })
 const selected = atom({ plugin: 'askito-panel', key: 'selected' } as const, null, { shape: 'selected-1' })
 const catalog = atom({ plugin: 'askito-panel', key: 'catalog' } as const, {}, { shape: 'catalog-1' })
@@ -95,7 +118,7 @@ async function act($: EngineInterface, id: string, action: 'answer' | 'dismiss',
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'askito-panel', description: 'Show the askito inbox beside the chat' })
-    void $.ui.open({ id: PANE, title: 'askito' })
+    void $.ui.open({ id: PANE, title: 'Ask·ito' })
     await refresh($)
     $.clock.every(POLL_MS, () => void refresh($))
 
@@ -103,14 +126,14 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'askito-panel' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'askito' })
+    await $.ui.open({ id: PANE, title: 'Ask·ito' })
     await refresh($)
 
-    return { text: 'askito panel opened.' }
+    return { text: 'Ask·ito panel opened.' }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Input, Markdown, Link } = $.ui.resolve(e)
+    const { Box, Text, Button, Input, Markdown, Link, Svg } = $.ui.resolve(e)
     const list = await read($, items)
     const picked = await read($, selected)
     const words = await read($, catalog)
@@ -121,15 +144,17 @@ export const register: Register = on => {
 
     if (state === 'offline') {
       return (
-        <Box flexDirection="column">
+        <Box flexDirection="column" padding="md">
           <Text>{t('panelOffline')}</Text>
         </Box>
       )
     }
     if (!list.length) {
       return (
-        <Box flexDirection="column">
-          <Text bold>{t('emptyWaitingTitle')}</Text>
+        <Box flexDirection="column" padding="md" gap="sm">
+          <Text size="heading" weight="semibold">
+            {t('emptyWaitingTitle')}
+          </Text>
           <Text dimColor>{t('emptyWaitingBody')}</Text>
           {inbox}
         </Box>
@@ -139,71 +164,115 @@ export const register: Register = on => {
     const detail = (item: InboxItem) => {
       const comment = () => drafts[item.id]?.trim() || undefined
       const answer = (body: object) => () => void act($, item.id, 'answer', { ...body, comment: comment() })
-      const box = (
-        <Input
-          key={`comment-${item.id}`}
-          label={t('commentLabel')}
-          value={drafts[item.id] ?? ''}
-          submitLabel={t('commentOnly')}
-          onInput={value => {
-            drafts[item.id] = value
-          }}
-          onSubmit={value => {
-            drafts[item.id] = value
-            if (value.trim()) void act($, item.id, 'answer', { decision: 'comment', comment: value.trim() })
-          }}
-        />
-      )
-      const controls = {
+      const remove = <Button key={`remove-${item.id}`} dimColor label={t('remove')} onPress={() => void act($, item.id, 'dismiss', {})} />
+      const choices =
+        item.kind === 'question' && !item.multi && item.options.length ? (
+          <Box flexDirection="column" gap="xs">
+            {item.options.map(option => (
+              <Button key={`option-${item.id}-${option.id}`} variant={option.recommended ? 'primary' : 'secondary'} onPress={answer({ decision: 'option', choices: [option.id] })}>
+                {option.label}
+                {option.recommended ? <Text dimColor> {t('recommended')}</Text> : ''}
+              </Button>
+            ))}
+          </Box>
+        ) : null
+      const actions = {
         approval: [
           <Button key={`yes-${item.id}`} variant="primary" label={t('approve')} onPress={answer({ decision: 'approved' })} />,
-          <Button key={`no-${item.id}`} label={t('reject')} onPress={answer({ decision: 'rejected' })} />,
+          <Button key={`no-${item.id}`} variant="secondary" label={t('reject')} onPress={answer({ decision: 'rejected' })} />,
         ],
         task: [
           <Button key={`did-${item.id}`} variant="primary" label={t('markDone')} onPress={answer({ decision: 'done' })} />,
-          <Button key={`cant-${item.id}`} label={t('cantDo')} onPress={answer({ decision: 'blocked' })} />,
+          <Button key={`cant-${item.id}`} variant="secondary" label={t('cantDo')} onPress={answer({ decision: 'blocked' })} />,
         ],
-        // A press sends at once, so a question with several answers goes to the page.
-        question: item.multi
-          ? [<Text dimColor>{t('panelMulti')}</Text>]
-          : item.options.map(option => (
-              <Button
-                key={`option-${item.id}-${option.id}`}
-                variant={option.recommended ? 'primary' : 'secondary'}
-                label={option.recommended ? `${option.label} (${t('recommended')})` : option.label}
-                onPress={answer({ decision: 'option', choices: [option.id] })}
-              />
-            )),
+        question: [],
       }[item.kind]
 
       return (
-        <Box flexDirection="column" paddingLeft={2} marginBottom={1}>
+        <Box flexDirection="column" gap="sm" marginTop="sm">
           {item.body ? <Markdown text={item.body} /> : null}
-          <Text dimColor>{item.agentWaiting ? t('chatWaiting') : t('chatAway')}</Text>
-          <Box flexDirection="column">{controls}</Box>
-          {box}
-          <Button key={`remove-${item.id}`} dimColor label={t('remove')} onPress={() => void act($, item.id, 'dismiss', {})} />
-          {failed ? <Text color="red">{t('errorGeneric')}</Text> : null}
+          <Text size="caption" dimColor>
+            {item.agentWaiting ? t('chatWaiting') : t('chatAway')}
+          </Text>
+          {item.kind === 'question' && item.multi ? (
+            <Text size="caption" dimColor>
+              {t('panelMulti')}
+            </Text>
+          ) : null}
+          {choices}
+          <Input
+            key={`comment-${item.id}`}
+            placeholder={t('commentLabel')}
+            value={drafts[item.id] ?? ''}
+            rows={2}
+            submitLabel={t('commentOnly')}
+            onInput={value => {
+              drafts[item.id] = value
+            }}
+            onSubmit={value => {
+              drafts[item.id] = value
+              if (value.trim()) void act($, item.id, 'answer', { decision: 'comment', comment: value.trim() })
+            }}
+          />
+          <Box flexDirection="row" flexWrap="wrap" gap="sm" alignItems="center">
+            {actions}
+            <Box flexGrow={1} />
+            {remove}
+          </Box>
+          {failed ? (
+            <Text size="caption" color="red">
+              {t('errorGeneric')}
+            </Text>
+          ) : null}
+        </Box>
+      )
+    }
+
+    const row = (item: InboxItem, index: number) => {
+      const isOpen = item.id === picked
+      return (
+        <Box flexDirection="row" gap="sm" alignItems="flex-start">
+          <Box width={3} flexShrink={0} paddingTop="xs">
+            <Text tabular weight="semibold" dimColor>
+              {index + 1}
+            </Text>
+          </Box>
+          <Svg source={kindSvg(item.kind)} alt={t(KIND_LABEL[item.kind])} width={32} height={32} />
+          <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+            <Button key={`row-${item.id}`} plain onPress={() => void update($, selected, () => (isOpen ? null : item.id))}>
+              <Text weight="semibold">{item.title}</Text>
+            </Button>
+            <Box flexDirection="row" flexWrap="wrap" columnGap="sm">
+              <Text size="caption" weight="medium">
+                {t(KIND_LABEL[item.kind])}
+              </Text>
+              {item.urgent ? (
+                <Text size="caption" weight="medium" color="red">
+                  {t('urgent')}
+                </Text>
+              ) : null}
+              <Text size="caption" dimColor>
+                {[item.project, item.chat].filter(Boolean).join(' · ')}
+              </Text>
+            </Box>
+            {isOpen ? detail(item) : null}
+          </Box>
         </Box>
       )
     }
 
     return (
-      <Box flexDirection="column">
-        <Text bold>
-          {list.length} {t('headWaiting')}
-        </Text>
-        {inbox}
-        {list.map((item, index) => (
-          <Box flexDirection="column" marginTop={1}>
-            <Button key={`row-${item.id}`} plain onPress={() => void update($, selected, () => item.id)}>
-              {index + 1}. {t(KIND_LABEL[item.kind])}
-              {item.urgent ? `, ${t('urgent')}` : ''}: {item.title}
-            </Button>
-            <Text dimColor>{[item.project, item.chat].filter(Boolean).join(', ')}</Text>
-            {item.id === picked ? detail(item) : null}
+      <Box flexDirection="column" padding="md" gap="lg">
+        <Box flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap="sm">
+          <Box flexDirection="row" alignItems="center" gap="sm">
+            <Text size="title" weight="bold" tabular>
+              {list.length}
+            </Text>
+            <Text size="heading">{t('headWaiting')}</Text>
           </Box>
-        ))}
+          {inbox}
+        </Box>
+        {list.map(row)}
       </Box>
     )
   })

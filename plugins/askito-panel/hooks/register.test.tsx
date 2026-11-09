@@ -61,7 +61,10 @@ async function start($: any, on: any, options: { installed?: boolean } = {}) {
 test('the pane numbers an open item and names its kind', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount(PANE)
-  expect((await ui.find({ type: 'Button', text: /Run the migration/ }))?.text).toBe('1. Approval: Run the migration?')
+  expect((await ui.find({ type: 'Button', text: /Run the migration/ }))?.text).toBe('Run the migration?')
+  expect((await ui.find({ type: 'Text', text: '1' }))?.text).toBe('1')
+  expect((await ui.find({ type: 'Text', text: 'Approval' }))?.text).toBe('Approval')
+  expect(await ui.find({ type: 'Svg' })).toBeDefined()
   await ui.unmount()
 })
 
