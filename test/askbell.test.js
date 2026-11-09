@@ -389,7 +389,7 @@ describe('setup', () => {
     const fakeHome = tempDir();
     const home = path.join(fakeHome, '.askbell');
     // PATH holds only node, so no real AI tool on this machine can be touched.
-    const env = { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome, ASKBELL_HOME: home, ASKBELL_PORT: '45992', ASKBELL_NO_NOTIFY: '1', PATH: path.dirname(process.execPath) };
+    const env = { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome, APPDATA: path.join(fakeHome, 'AppData'), ASKBELL_HOME: home, ASKBELL_PORT: '45992', ASKBELL_NO_NOTIFY: '1', PATH: path.dirname(process.execPath) };
     const cli = (...args) => run(process.execPath, [BIN, ...args], { env, cwd: fakeHome });
     return { fakeHome, home, cli };
   }
@@ -407,7 +407,7 @@ describe('setup', () => {
 
     const cursor = JSON.parse(fs.readFileSync(path.join(fakeHome, '.cursor', 'mcp.json'), 'utf8'));
     assert.equal(cursor.mcpServers.mine.command, 'x');
-    assert.deepEqual(cursor.mcpServers.askbell.args, ['mcp']);
+    assert.equal(cursor.mcpServers.askbell.args.at(-1), 'mcp');
     assert.equal(cursor.mcpServers.askbell.type, 'stdio');
     const toml = fs.readFileSync(path.join(fakeHome, '.codex', 'config.toml'), 'utf8');
     assert.match(toml, /model = "x"/);
@@ -425,8 +425,11 @@ describe('setup', () => {
     assert.equal(again, rules);
     assert.equal(fs.readFileSync(path.join(fakeHome, '.codex', 'config.toml'), 'utf8'), toml);
 
-    const installed = path.join(home, 'bin', 'askbell');
-    const { stdout } = await run(installed, ['status'], { env: { ...process.env, HOME: fakeHome, ASKBELL_HOME: home, ASKBELL_PORT: '45992' } });
+    const statusEnv = { env: { ...process.env, HOME: fakeHome, ASKBELL_HOME: home, ASKBELL_PORT: '45992' } };
+    const { stdout } =
+      process.platform === 'win32'
+        ? await run('cmd.exe', ['/d', '/c', path.join(home, 'bin', 'askbell.cmd'), 'status'], statusEnv)
+        : await run(path.join(home, 'bin', 'askbell'), ['status'], statusEnv);
     assert.match(stdout, /running/);
 
     await cli('uninstall');

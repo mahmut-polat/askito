@@ -20,7 +20,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/*.test.js"
+    "test": "node --test --test-concurrency=1 test/askbell.test.js"
   },
   "repository": {
     "type": "git",

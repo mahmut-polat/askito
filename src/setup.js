@@ -116,7 +116,7 @@ function adapters() {
 }
 
 function localize(text) {
-  if (isWindows) return text.replaceAll('~/.askbell/bin/askbell', shimPath());
+  if (isWindows) return text.replaceAll('~/.askbell/bin/askbell', shimPath()).replaceAll('~/.askbell', homeDir());
   const defaultHome = path.join(os.homedir(), '.askbell');
   return homeDir() === defaultHome ? text : text.replaceAll('~/.askbell', homeDir());
 }
@@ -235,6 +235,10 @@ function claudeCli(args) {
   execFileSync('claude', args, { stdio: 'ignore', timeout: 20000 });
 }
 
+// Windows installs of the CLI are often .cmd files, which execFile cannot run
+// safely, so there the config file is written directly.
+const useToolCli = (tool) => tool.mcp.cli && !isWindows && onPath(tool.mcp.cli);
+
 function installMcp(tool, log) {
   const { command, args } = mcpCommand();
   if (tool.toml) {
@@ -247,7 +251,7 @@ function installMcp(tool, log) {
     return;
   }
   if (!tool.mcp) return;
-  if (tool.mcp.cli && onPath(tool.mcp.cli)) {
+  if (useToolCli(tool)) {
     // The tool rewrites this file constantly, so its own command is the safe writer.
     try {
       try {
@@ -271,7 +275,7 @@ function uninstallMcp(tool, log) {
     return;
   }
   if (!tool.mcp) return;
-  if (tool.mcp.cli && onPath(tool.mcp.cli)) {
+  if (useToolCli(tool)) {
     try {
       claudeCli(['mcp', 'remove', '--scope', 'user', 'askbell']);
       log.push('mcp removed with claude mcp remove');
@@ -347,7 +351,7 @@ export async function runSetup(values) {
   }
   log.forEach((line) => out(line));
 
-  execFileSync(shimPath(), ['start'], { stdio: 'ignore', shell: isWindows });
+  execFileSync(process.execPath, [path.join(appDir(), 'bin', 'askbell.js'), 'start'], { stdio: 'ignore', windowsHide: true });
   out('');
   out(tools.length ? `Connected: ${tools.map((tool) => tool.name).join(', ')}` : 'No AI tool detected. Use --tools, or paste the output of: askbell instructions');
   out('Restart open AI chats so they load askbell.');

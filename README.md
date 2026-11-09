@@ -20,7 +20,7 @@ Or paste this into any AI coding tool:
 Read https://raw.githubusercontent.com/mahmut-polat/askbell/main/INSTALL.md and follow it.
 ```
 
-Setup needs Node 20 or newer and has no other dependencies. It copies askbell to `~/.askbell`, finds the AI tools on your machine and connects each one. Restart open chats afterwards, then open the inbox:
+Setup needs Node 20 or newer and git, and works the same on macOS, Linux and Windows. It copies askbell to `~/.askbell`, finds the AI tools on your machine and connects each one. Restart open chats afterwards, then open the inbox:
 
 ```bash
 ~/.askbell/bin/askbell open

@@ -57,6 +57,7 @@ export async function ensureServer() {
   const log = fs.openSync(filePath('server.log'), 'a', 0o600);
   const child = spawn(process.execPath, [path.join(PACKAGE_ROOT, 'bin', 'askbell.js'), 'serve'], {
     detached: true,
+    windowsHide: true,
     stdio: ['ignore', log, log],
     env: process.env,
   });

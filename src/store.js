@@ -100,7 +100,16 @@ export class Store extends EventEmitter {
     this.timer = null;
     const tmp = `${this.file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify({ version: 1, items: [...this.items.values()] }), { mode: 0o600 });
-    fs.renameSync(tmp, this.file);
+    // On Windows, antivirus and indexers can hold the target open for a moment.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        fs.renameSync(tmp, this.file);
+        return;
+      } catch (err) {
+        if (attempt === 4 || !['EPERM', 'EBUSY', 'EACCES'].includes(err.code)) throw err;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+      }
+    }
   }
 
   changed(type, item) {
