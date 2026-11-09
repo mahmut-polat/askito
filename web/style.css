@@ -12,6 +12,14 @@
   --danger-text: #ffffff;
   --ok: #2a6339;
   --focus: #1f5fbf;
+  --kind-question: #1f5fbf;
+  --kind-question-soft: #e3edfb;
+  --kind-approval: #7a4f00;
+  --kind-approval-soft: #f4e8d0;
+  --kind-task: #6a2fa0;
+  --kind-task-soft: #efe5fa;
+  --row-num: 24px;
+  --row-icon: 36px;
   --font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --space-1: 4px;
@@ -39,6 +47,12 @@
   --danger-text: #2a0705;
   --ok: #86c896;
   --focus: #7fb2ff;
+  --kind-question: #8ab8ff;
+  --kind-question-soft: #1c2b44;
+  --kind-approval: #e0b25c;
+  --kind-approval-soft: #3a2e15;
+  --kind-task: #c9a2f0;
+  --kind-task-soft: #33234a;
   color-scheme: dark;
 }
 
@@ -272,14 +286,60 @@ kbd {
   border-bottom: 1px solid var(--line);
 }
 
+.row.kind-question {
+  --kind: var(--kind-question);
+  --kind-soft: var(--kind-question-soft);
+}
+
+.row.kind-approval {
+  --kind: var(--kind-approval);
+  --kind-soft: var(--kind-approval-soft);
+}
+
+.row.kind-task {
+  --kind: var(--kind-task);
+  --kind-soft: var(--kind-task-soft);
+}
+
 .row-head {
-  display: block;
+  display: grid;
+  grid-template-columns: var(--row-num) var(--row-icon) minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
   width: 100%;
-  padding: var(--space-3) 0;
+  padding: var(--space-4) 0;
   border: 0;
   background: none;
   text-align: start;
   cursor: pointer;
+}
+
+.row-num {
+  padding-top: 6px;
+  text-align: end;
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.kind-icon {
+  display: grid;
+  place-items: center;
+  inline-size: var(--row-icon);
+  block-size: var(--row-icon);
+  border-radius: var(--radius);
+  background: var(--kind-soft);
+  color: var(--kind);
+}
+
+.kind-icon svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.row-text {
+  min-inline-size: 0;
 }
 
 .row-title {
@@ -306,7 +366,7 @@ kbd {
 
 .tag {
   font-weight: 600;
-  color: var(--text);
+  color: var(--kind);
 }
 
 .tag.urgent {
@@ -320,6 +380,7 @@ kbd {
 
 .detail {
   padding-bottom: var(--space-5);
+  padding-inline-start: calc(var(--row-num) + var(--row-icon) + 2 * var(--space-3));
   display: grid;
   gap: var(--space-4);
 }
@@ -576,6 +637,10 @@ textarea {
 
   .side-foot {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail {
+    padding-inline-start: 0;
   }
 
   .projects {

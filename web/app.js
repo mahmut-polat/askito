@@ -9,6 +9,22 @@ const TABS = [
   { id: 'removed', status: 'dismissed', label: 'tabRemoved', head: 'headRemoved', empty: 'emptyRemoved' },
 ];
 const KIND_LABEL = { question: 'kindQuestion', approval: 'kindApproval', task: 'kindTask' };
+// Lucide icons, one distinct silhouette per kind.
+const KIND_ICON = {
+  question: [
+    ['circle', { cx: 12, cy: 12, r: 10 }],
+    ['path', { d: 'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3' }],
+    ['path', { d: 'M12 17h.01' }],
+  ],
+  approval: [
+    ['path', { d: 'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z' }],
+    ['path', { d: 'm9 12 2 2 4-4' }],
+  ],
+  task: [
+    ['circle', { cx: 12, cy: 8, r: 5 }],
+    ['path', { d: 'M20 21a8 8 0 0 0-16 0' }],
+  ],
+};
 
 const app = document.getElementById('app');
 const live = document.getElementById('live');
@@ -406,13 +422,27 @@ function thread(item) {
   );
 }
 
-function renderRow(item) {
+function kindIcon(kind) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  const attrs = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' };
+  Object.entries(attrs).forEach(([name, value]) => svg.setAttribute(name, value));
+  for (const [tag, shape] of KIND_ICON[kind]) {
+    const part = document.createElementNS(ns, tag);
+    Object.entries(shape).forEach(([name, value]) => part.setAttribute(name, value));
+    svg.append(part);
+  }
+  return h('span', { class: 'kind-icon' }, svg);
+}
+
+function renderRow(item, index) {
   const isOpen = state.selected === item.id;
   const row = () => document.querySelector(`[data-item="${item.id}"]`);
   const meta = h(
     'span',
     { class: 'meta' },
-    h('span', { class: `tag${item.urgent ? ' urgent' : ''}` }, item.urgent ? `${t('urgent')}, ${t(KIND_LABEL[item.kind])}` : t(KIND_LABEL[item.kind])),
+    h('span', { class: 'tag' }, t(KIND_LABEL[item.kind])),
+    item.urgent ? h('span', { class: 'tag urgent' }, t('urgent')) : null,
     !state.project ? h('span', {}, projectLabel(item.project)) : null,
     item.chat ? h('span', {}, item.chat) : null,
     item.agent ? h('span', {}, item.agent) : null,
@@ -429,8 +459,9 @@ function renderRow(item) {
         render();
       },
     },
-    h('span', { class: 'row-title' }, item.title),
-    meta,
+    h('span', { class: 'row-num' }, String(index + 1)),
+    kindIcon(item.kind),
+    h('span', { class: 'row-text' }, h('span', { class: 'row-title' }, item.title), meta),
   );
   const error = state.error?.id === item.id ? h('p', { class: 'error', role: 'alert' }, state.error.message) : null;
   const detail = isOpen
@@ -444,7 +475,7 @@ function renderRow(item) {
         error,
       )
     : null;
-  return h('li', { class: `row${isOpen ? ' is-open' : ''}`, 'data-item': item.id }, header, detail);
+  return h('li', { class: `row kind-${item.kind}${isOpen ? ' is-open' : ''}`, 'data-item': item.id }, header, detail);
 }
 
 function renderSide() {
