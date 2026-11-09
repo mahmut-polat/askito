@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { parseArgs } from 'node:util';
 import { api, ensureServer, formatItem, inboxUrl, status, stopServer, waitForItems } from './client.js';
 import { detectContext } from './context.js';
+import { runHook } from './hooks.js';
 import { runMcp } from './mcp.js';
 import { filePath, readConfig, VERSION, writeConfig } from './paths.js';
 import { serve } from './server.js';
@@ -140,6 +141,8 @@ export async function main(argv) {
     case 'instructions':
       print(rulesBlock());
       return 0;
+    case 'hook':
+      return runHook(rest[0]);
     case 'start':
       await ensureServer();
       print(`running at http://127.0.0.1 (data in ${filePath('')})`);

@@ -44,6 +44,7 @@ function adapters() {
       mcp: { file: inHome('.claude.json'), key: 'mcpServers', cli: 'claude' },
       skills: [inHome('.claude', 'skills')],
       rules: inHome('.claude', 'CLAUDE.md'),
+      settings: inHome('.claude', 'settings.json'),
     },
     {
       id: 'codex',
@@ -116,7 +117,7 @@ function adapters() {
   ];
 }
 
-function localize(text) {
+export function localize(text) {
   if (isWindows) return text.replaceAll('~/.askito/bin/askito', shimPath()).replaceAll('~/.askito', homeDir());
   const defaultHome = path.join(os.homedir(), '.askito');
   return homeDir() === defaultHome ? text : text.replaceAll('~/.askito', homeDir());
@@ -137,6 +138,63 @@ This rule is mandatory and takes priority over any habit or other instruction to
 - If askito fails, ask in the chat and say so.
 
 Full guide: \`~/.askito/app/skill/SKILL.md\`.`);
+}
+
+// A rule in a text file can be forgotten after a long chat. These hooks hold
+// the line: they refuse chat questions and restore the rule after a compaction.
+function claudeHooks() {
+  const entry = (name, matcher) => ({
+    ...(matcher ? { matcher } : {}),
+    hooks: [{ type: 'command', command: `"${shimPath()}" hook ${name}`, timeout: 15 }],
+  });
+  return {
+    PreToolUse: [entry('block-question', 'AskUserQuestion|mcp__ccd_turn__wrap_up')],
+    SessionStart: [entry('session', 'startup|resume|clear|compact')],
+    UserPromptSubmit: [entry('reminder')],
+    Stop: [entry('stop')],
+  };
+}
+
+function withoutOurHooks(hooks = {}) {
+  const isOurs = (entry) => entry.hooks?.some((hook) => /askito(\.cmd)?" hook /.test(hook.command ?? ''));
+  const kept = {};
+  for (const [event, entries] of Object.entries(hooks)) {
+    const left = entries.filter((entry) => !isOurs(entry));
+    if (left.length) kept[event] = left;
+  }
+  return kept;
+}
+
+function setClaudeHooks(file, log) {
+  let data;
+  try {
+    data = readJsonFile(file);
+  } catch {
+    log.push(`SKIPPED ${file}: it is not plain JSON, so the askito hooks were not added.`);
+    return;
+  }
+  const hooks = withoutOurHooks(data.hooks);
+  for (const [event, entries] of Object.entries(claudeHooks())) hooks[event] = [...(hooks[event] ?? []), ...entries];
+  if (JSON.stringify(hooks) === JSON.stringify(data.hooks)) return;
+  backup(file, log);
+  writeAtomic(file, `${JSON.stringify({ ...data, hooks }, null, 2)}\n`);
+  log.push(`hooks ${file}`);
+}
+
+function removeClaudeHooks(file, log) {
+  let data;
+  try {
+    data = readJsonFile(file);
+  } catch {
+    log.push(`SKIPPED ${file}: it is not plain JSON. Remove the askito hooks by hand.`);
+    return;
+  }
+  if (!data.hooks) return;
+  const hooks = withoutOurHooks(data.hooks);
+  if (JSON.stringify(hooks) === JSON.stringify(data.hooks)) return;
+  const { hooks: _removed, ...rest } = data;
+  writeAtomic(file, `${JSON.stringify(Object.keys(hooks).length ? { ...rest, hooks } : rest, null, 2)}\n`);
+  log.push(`removed hooks from ${file}`);
 }
 
 // Only a new install asks, so a later reinstall does not nag.
@@ -353,7 +411,7 @@ export async function runSetup(values) {
     out('Dry run, nothing was written.');
     out(`Would install the app in ${appDir()}`);
     for (const tool of tools) {
-      const targets = [tool.mcp?.file, tool.toml, tool.rules, ...(tool.skills ?? []).map((d) => path.join(d, 'askito', 'SKILL.md'))].filter(Boolean);
+      const targets = [tool.mcp?.file, tool.toml, tool.rules, tool.settings,...(tool.skills ?? []).map((d) => path.join(d, 'askito', 'SKILL.md'))].filter(Boolean);
       out(`${tool.name}:`);
       targets.forEach((target) => out(`  ${target}`));
     }
@@ -369,6 +427,7 @@ export async function runSetup(values) {
     installMcp(tool, log);
     (tool.skills ?? []).forEach((dir) => installSkill(dir, log));
     if (tool.rules) writeBlock(tool.rules, MD_START, MD_END, rulesBlock(), log);
+    if (tool.settings) setClaudeHooks(tool.settings, log);
   }
   log.forEach((line) => out(line));
 
@@ -389,6 +448,7 @@ export async function runUninstall(values) {
     uninstallMcp(tool, log);
     for (const dir of tool.skills ?? []) fs.rmSync(path.join(dir, 'askito'), { recursive: true, force: true });
     if (tool.rules) removeBlock(tool.rules, MD_START, MD_END, log);
+    if (tool.settings) removeClaudeHooks(tool.settings, log);
   }
   fs.rmSync(path.join(inHome('.agents', 'skills'), 'askito'), { recursive: true, force: true });
   fs.rmSync(appDir(), { recursive: true, force: true });

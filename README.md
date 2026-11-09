@@ -86,6 +86,8 @@ If the chat has already ended, your answer stays in the inbox. The next session 
 
 Any other tool with a shell works through the command line. Run `askito instructions` and paste the output into that tool's rules file. A skill also lands in `~/.agents/skills` for tools that read that folder.
 
+In Claude Code the rule is enforced as well as written. Setup adds hooks to `~/.claude/settings.json` that refuse the chat question tools, send back a reply that ends on a question, and put the rule back into context at session start, after a compaction and on every prompt. They only act while askito can run, so a broken install never blocks a chat. The app's own permission dialogs still appear in the chat window. Other tools get the written rule only.
+
 To skip permission prompts in Claude Code, allow `mcp__askito` and `Bash(~/.askito/bin/askito:*)` yourself. Setup never changes a tool's permission settings.
 
 The test suite runs on macOS, Linux and Windows with Node 20, 22 and 24. Desktop notifications and opening the browser sit outside those tests and have only been tried by hand on macOS, so reports from Windows and Linux are welcome.

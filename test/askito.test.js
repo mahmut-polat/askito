@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -367,6 +367,53 @@ describe('end to end', () => {
     assert.match(skill, /askito open/);
   });
 
+  describe('enforcement hooks', () => {
+    const hook = (name, input) => spawnSync(process.execPath, [BIN, 'hook', name], { input: JSON.stringify(input), env, cwd: fakeHome, encoding: 'utf8' });
+
+    test('the chat question tool is blocked and points at askito', () => {
+      const res = hook('block-question', { tool_name: 'AskUserQuestion', tool_input: {} });
+      assert.equal(res.status, 2);
+      assert.match(res.stderr, /askito ask/);
+    });
+
+    test('end-of-turn buttons are blocked only when they carry a question', () => {
+      assert.equal(hook('block-question', { tool_name: 'mcp__ccd_turn__wrap_up', tool_input: { ask: 'Ship it?' } }).status, 2);
+      assert.equal(hook('block-question', { tool_name: 'mcp__ccd_turn__wrap_up', tool_input: { recap: 'Done.' } }).status, 0);
+    });
+
+    test('other tools pass', () => {
+      assert.equal(hook('block-question', { tool_name: 'Bash', tool_input: {} }).status, 0);
+    });
+
+    test('a turn that ends on a question is sent back once', () => {
+      assert.equal(hook('stop', { last_assistant_message: 'Tests pass.\n\nHangisini seçeyim?' }).status, 2);
+      assert.equal(hook('stop', { last_assistant_message: 'Hangisini seçeyim?', stop_hook_active: true }).status, 0);
+      assert.equal(hook('stop', { last_assistant_message: 'Tests pass.' }).status, 0);
+    });
+
+    test('the rule is put back into context at session start and on each prompt', () => {
+      for (const name of ['session', 'reminder']) {
+        const res = hook(name, { cwd: fakeHome });
+        assert.equal(res.status, 0);
+        assert.match(JSON.parse(res.stdout).hookSpecificOutput.additionalContext, /askito/);
+      }
+    });
+
+    test('broken input never blocks a tool', () => {
+      const res = spawnSync(process.execPath, [BIN, 'hook', 'block-question'], { input: 'not json', env, cwd: fakeHome, encoding: 'utf8' });
+      assert.equal(res.status, 0);
+    });
+
+    test('when askito cannot run, chats may ask normally', async () => {
+      const other = http.createServer((_, res) => res.end('something else'));
+      await new Promise((r) => other.listen(45993, '127.0.0.1', r));
+      const running = run(process.execPath, [BIN, 'hook', 'block-question'], { env: { ...env, ASKITO_PORT: '45993' }, cwd: fakeHome });
+      running.child.stdin.end(JSON.stringify({ tool_name: 'AskUserQuestion', tool_input: {} }));
+      await running;
+      other.close();
+    });
+  });
+
   test('an agent cannot use the command line to approve', async () => {
     const help = await cli('--help');
     assert.doesNotMatch(help.stdout, /askito answer/);
@@ -469,6 +516,28 @@ describe('setup', () => {
     assert.equal(fs.readFileSync(path.join(fakeHome, '.config', 'zed', 'settings.json'), 'utf8'), original);
     assert.match(stdout, /SKIPPED/);
     await cli('uninstall', '--purge');
+  });
+
+  test('setup adds the Claude Code hooks, keeps the user\'s own, and uninstall restores the file', async () => {
+    const { fakeHome, cli } = sandbox();
+    fs.mkdirSync(path.join(fakeHome, '.claude'));
+    const file = path.join(fakeHome, '.claude', 'settings.json');
+    const original = { model: 'x', hooks: { Stop: [{ hooks: [{ type: 'command', command: 'mine' }] }] } };
+    fs.writeFileSync(file, JSON.stringify(original));
+
+    await cli('setup');
+    const installed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(installed.model, 'x');
+    assert.ok(installed.hooks.Stop.some((entry) => entry.hooks[0].command === 'mine'));
+    assert.match(JSON.stringify(installed.hooks.PreToolUse), /AskUserQuestion/);
+    assert.match(JSON.stringify(installed.hooks.SessionStart), /compact/);
+    assert.match(JSON.stringify(installed.hooks.UserPromptSubmit), /hook reminder/);
+
+    await cli('setup');
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), installed);
+
+    await cli('uninstall', '--purge');
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), original);
   });
 
   test('a new install posts one first question and a reinstall does not', async () => {
