@@ -22,9 +22,13 @@ Read https://raw.githubusercontent.com/mahmut-polat/askbell/main/INSTALL.md and 
 
 Setup needs Node 20 or newer and git, and works the same on macOS, Linux and Windows. It copies askbell to `~/.askbell`, finds the AI tools on your machine and connects each one. Restart open chats afterwards, then open the inbox:
 
-```bash
-~/.askbell/bin/askbell open
-```
+| System | Command |
+|---|---|
+| macOS, Linux | `~/.askbell/bin/askbell open` |
+| Windows PowerShell | `& "$env:USERPROFILE\.askbell\bin\askbell.cmd" open` |
+| Windows Command Prompt | `"%USERPROFILE%\.askbell\bin\askbell.cmd" open` |
+
+The rest of this page writes the command as `askbell`. Use the full path from this table.
 
 In Claude Code, typing `/askbell` opens it too. Bookmark the page if you like. The server starts by itself the first time a chat posts, or when you run `askbell open`.
 
@@ -82,7 +86,7 @@ Any other tool with a shell works through the command line. Run `askbell instruc
 
 To skip permission prompts in Claude Code, allow `mcp__askbell` and `Bash(~/.askbell/bin/askbell:*)` yourself. Setup never changes a tool's permission settings.
 
-macOS and Linux are covered by the test suite. The Windows code paths exist but have not been run yet, so reports are welcome.
+The test suite runs on macOS, Linux and Windows with Node 20, 22 and 24. Desktop notifications and opening the browser sit outside those tests and have only been tried by hand on macOS, so reports from Windows and Linux are welcome.
 
 ## Command line
 
