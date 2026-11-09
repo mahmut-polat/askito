@@ -1,42 +1,42 @@
 <img src="web/icon.svg" width="72" alt="" />
 
-# askbell
+# askito
 
 One local inbox for every question your AI coding chats need to ask you.
 
-When you run several chats at once, each one stops at a different moment to ask something, and you end up clicking through tabs to find who is blocked. With askbell, chats post their questions, approvals and human-only jobs to one page, sorted by project. You answer there, and the chat that asked carries on.
+When you run several chats at once, each one stops at a different moment to ask something, and you end up clicking through tabs to find who is blocked. With askito, chats post their questions, approvals and human-only jobs to one page, sorted by project. You answer there, and the chat that asked carries on.
 
-![The askbell inbox](docs/inbox.jpg)
+![The askito inbox](docs/inbox.jpg)
 
 ## Install
 
 ```bash
-npx -y github:mahmut-polat/askbell setup
+npx -y github:mahmut-polat/askito setup
 ```
 
 Or paste this into any AI coding tool:
 
 ```text
-Read https://raw.githubusercontent.com/mahmut-polat/askbell/main/INSTALL.md and follow it.
+Read https://raw.githubusercontent.com/mahmut-polat/askito/main/INSTALL.md and follow it.
 ```
 
-Setup needs Node 20 or newer and git, and works the same on macOS, Linux and Windows. It copies askbell to `~/.askbell`, finds the AI tools on your machine and connects each one. Restart open chats afterwards, then open the inbox:
+Setup needs Node 20 or newer and git, and works the same on macOS, Linux and Windows. It copies askito to `~/.askito`, finds the AI tools on your machine and connects each one. Restart open chats afterwards, then open the inbox:
 
 | System | Command |
 |---|---|
-| macOS, Linux | `~/.askbell/bin/askbell open` |
-| Windows PowerShell | `& "$env:USERPROFILE\.askbell\bin\askbell.cmd" open` |
-| Windows Command Prompt | `"%USERPROFILE%\.askbell\bin\askbell.cmd" open` |
+| macOS, Linux | `~/.askito/bin/askito open` |
+| Windows PowerShell | `& "$env:USERPROFILE\.askito\bin\askito.cmd" open` |
+| Windows Command Prompt | `"%USERPROFILE%\.askito\bin\askito.cmd" open` |
 
-The rest of this page writes the command as `askbell`. Use the full path from this table.
+The rest of this page writes the command as `askito`. Use the full path from this table.
 
-In Claude Code, typing `/askbell` opens it too. Bookmark the page if you like. The server starts by itself the first time a chat posts, or when you run `askbell open`.
+In Claude Code, typing `/askito` opens it too. Bookmark the page if you like. The server starts by itself the first time a chat posts, or when you run `askito open`.
 
-Add `--dry-run` to see which files setup would touch, or `--tools claude,cursor` to choose. Setup copies each config file to `~/.askbell/backups` before its first change, and it leaves alone any JSON file it cannot fully parse (it prints what to add by hand).
+Add `--dry-run` to see which files setup would touch, or `--tools claude,cursor` to choose. Setup copies each config file to `~/.askito/backups` before its first change, and it leaves alone any JSON file it cannot fully parse (it prints what to add by hand).
 
-There is nothing else to configure. Setup installs the skill that teaches agents how to post, and adds a rule telling every connected agent to send all questions to the inbox and stay away from chat question tools. To go back to asking in chat, delete the block between `<!-- askbell:start -->` and `<!-- askbell:end -->` in that tool's rules file.
+There is nothing else to configure. Setup installs the skill that teaches agents how to post, and adds a rule telling every connected agent to send all questions to the inbox and stay away from chat question tools. To go back to asking in chat, delete the block between `<!-- askito:start -->` and `<!-- askito:end -->` in that tool's rules file.
 
-A repository shows under its folder name. To rename it in the inbox, run `askbell alias "Friendly name" /path/to/repo`.
+A repository shows under its folder name. To rename it in the inbox, run `askito alias "Friendly name" /path/to/repo`.
 
 ## What you can do on the page
 
@@ -56,15 +56,15 @@ Keyboard: `J` and `K` move, `1` to `9` pick an option, `Ctrl+Enter` or `Cmd+Ente
 
 ## How an answer reaches the chat
 
-Coding tools can't be woken from the outside, so each chat has to be listening. askbell gives it three ways to do that, and the installed instructions tell the agent to use the first one its tool supports:
+Coding tools can't be woken from the outside, so each chat has to be listening. askito gives it three ways to do that, and the installed instructions tell the agent to use the first one its tool supports:
 
 | Tool can | Agent does |
 |---|---|
-| Run a background command and wake when it exits (Claude Code) | Runs `askbell ask ... --wait` in the background and keeps working |
-| Call MCP tools | Calls `askbell_ask`, then repeats `askbell_wait` in rounds short enough for the client's tool timeout |
-| Only run foreground commands | Repeats `askbell wait ID --timeout 100` |
+| Run a background command and wake when it exits (Claude Code) | Runs `askito ask ... --wait` in the background and keeps working |
+| Call MCP tools | Calls `askito_ask`, then repeats `askito_wait` in rounds short enough for the client's tool timeout |
+| Only run foreground commands | Repeats `askito wait ID --timeout 100` |
 
-If the chat has already ended, your answer stays in the inbox. The next session in that repository runs `askbell pickup`, finds it, and acts on it.
+If the chat has already ended, your answer stays in the inbox. The next session in that repository runs `askito pickup`, finds it, and acts on it.
 
 ## Supported tools
 
@@ -82,31 +82,31 @@ If the chat has already ended, your answer stays in the inbox. The next session 
 | Kiro | MCP server, steering file |
 | Zed | MCP server |
 
-Any other tool with a shell works through the command line. Run `askbell instructions` and paste the output into that tool's rules file. A skill also lands in `~/.agents/skills` for tools that read that folder.
+Any other tool with a shell works through the command line. Run `askito instructions` and paste the output into that tool's rules file. A skill also lands in `~/.agents/skills` for tools that read that folder.
 
-To skip permission prompts in Claude Code, allow `mcp__askbell` and `Bash(~/.askbell/bin/askbell:*)` yourself. Setup never changes a tool's permission settings.
+To skip permission prompts in Claude Code, allow `mcp__askito` and `Bash(~/.askito/bin/askito:*)` yourself. Setup never changes a tool's permission settings.
 
 The test suite runs on macOS, Linux and Windows with Node 20, 22 and 24. Desktop notifications and opening the browser sit outside those tests and have only been tried by hand on macOS, so reports from Windows and Linux are welcome.
 
 ## Command line
 
 ```text
-askbell ask "Title"       --body TEXT --option "Label::Description" --recommend 1 --wait
-askbell approve "Title"   --body TEXT --urgent --wait
-askbell task "Title"      --body TEXT --chat "short name" --wait
-askbell wait ID           --timeout 100
-askbell pickup
-askbell reply ID "Follow-up, puts the item back in Waiting"
-askbell done ID "What happened"
-askbell list --status open
-askbell alias "Friendly name" /path/to/repo
+askito ask "Title"       --body TEXT --option "Label::Description" --recommend 1 --wait
+askito approve "Title"   --body TEXT --urgent --wait
+askito task "Title"      --body TEXT --chat "short name" --wait
+askito wait ID           --timeout 100
+askito pickup
+askito reply ID "Follow-up, puts the item back in Waiting"
+askito done ID "What happened"
+askito list --status open
+askito alias "Friendly name" /path/to/repo
 ```
 
-`--wait` and `wait` exit with 0 when answered, 3 when you removed the item, and 4 on timeout. Projects come from the git repository, and every worktree of a repository lands in the same project. Run `askbell --help` for the rest.
+`--wait` and `wait` exit with 0 when answered, 3 when you removed the item, and 4 on timeout. Projects come from the git repository, and every worktree of a repository lands in the same project. Run `askito --help` for the rest.
 
 ## Security and privacy
 
-Everything stays on your machine, in `~/.askbell`. There is no account, telemetry or cloud service.
+Everything stays on your machine, in `~/.askito`. There is no account, telemetry or cloud service.
 
 The server listens on `127.0.0.1` only. It refuses unknown `Host` headers, which blocks DNS rebinding, and refuses browser posts from any other origin. Agents and the browser use separate secrets, and the answer routes accept only the browser's, so an agent calling the API cannot approve its own request. Everything an agent writes is rendered as text under a strict content security policy.
 
@@ -115,7 +115,7 @@ An agent running as your OS user can still read the browser secret from disk. Th
 ## Uninstall
 
 ```bash
-~/.askbell/bin/askbell uninstall
+~/.askito/bin/askito uninstall
 ```
 
 This removes the MCP entries, skills and rule blocks, and keeps your inbox data. Add `--purge` to delete that too.

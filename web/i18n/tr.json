@@ -59,8 +59,8 @@
   "emptyRemovedBody": "Listeden çıkardıkların burada durur, geri getirebilirsin.",
   "noMatch": "Bu aramayla eşleşen yok.",
   "listEnd": "Listenin sonu",
-  "errorGeneric": "Gönderilemedi. askbell'in çalıştığını kontrol edip tekrar dene.",
-  "errorSession": "Bu sayfanın oturumu düştü. Terminalde askbell open komutunu çalıştır.",
+  "errorGeneric": "Gönderilemedi. askito'nun çalıştığını kontrol edip tekrar dene.",
+  "errorSession": "Bu sayfanın oturumu düştü. Terminalde askito open komutunu çalıştır.",
   "announceSent": "Gönderildi",
   "unsorted": "Diğer"
 }

@@ -1,11 +1,11 @@
 {
-  "name": "askbell",
+  "name": "askito",
   "version": "0.1.0",
   "description": "One local inbox for every question your AI coding chats need to ask you.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "askbell": "bin/askbell.js"
+    "askito": "bin/askito.js"
   },
   "files": [
     "bin",
@@ -20,11 +20,11 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/askbell.test.js"
+    "test": "node --test --test-concurrency=1 test/askito.test.js"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mahmut-polat/askbell.git"
+    "url": "git+https://github.com/mahmut-polat/askito.git"
   },
   "keywords": [
     "mcp",

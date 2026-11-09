@@ -12,8 +12,8 @@ import { Store } from '../src/store.js';
 
 const run = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = path.join(ROOT, 'bin', 'askbell.js');
-const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'askbell-test-'));
+const BIN = path.join(ROOT, 'bin', 'askito.js');
+const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'askito-test-'));
 
 function newStore() {
   return new Store(path.join(tempDir(), 'items.json'));
@@ -162,7 +162,7 @@ describe('server', () => {
   }
 
   const agent = { Authorization: `Bearer ${tokens.agent}` };
-  const human = () => ({ Cookie: `askbell_ui=${tokens.ui}`, Origin: `http://127.0.0.1:${port}` });
+  const human = () => ({ Cookie: `askito_ui=${tokens.ui}`, Origin: `http://127.0.0.1:${port}` });
   const create = async (body) => (await call('POST', '/api/items', { headers: agent, body })).json().item;
 
   test('an unknown Host header is refused, which blocks DNS rebinding', async () => {
@@ -237,7 +237,7 @@ describe('server', () => {
     const before_ = notifications.length;
     await create({ title: 'Ping', project: 'demo' });
     assert.equal(notifications.length, before_ + 1);
-    assert.deepEqual(notifications.at(-1), ['askbell: demo', 'Ping']);
+    assert.deepEqual(notifications.at(-1), ['askito: demo', 'Ping']);
   });
 
   test('the login link sets an HttpOnly strict cookie and a wrong link does not', async () => {
@@ -269,7 +269,7 @@ describe('server', () => {
 describe('end to end', () => {
   const home = tempDir();
   const fakeHome = tempDir();
-  const env = { ...process.env, HOME: fakeHome, ASKBELL_HOME: home, ASKBELL_PORT: '45991', ASKBELL_NO_NOTIFY: '1', PATH: path.dirname(process.execPath) };
+  const env = { ...process.env, HOME: fakeHome, ASKITO_HOME: home, ASKITO_PORT: '45991', ASKITO_NO_NOTIFY: '1', PATH: path.dirname(process.execPath) };
   const cli = (...args) => run(process.execPath, [BIN, ...args], { env, cwd: fakeHome });
 
   after(async () => {
@@ -307,7 +307,7 @@ describe('end to end', () => {
     const ui = fs.readFileSync(path.join(home, 'ui.token'), 'utf8').trim();
     const res = await fetch(`http://127.0.0.1:45991/api/items/${id}/answer`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: `askbell_ui=${ui}`, Origin: 'http://127.0.0.1:45991' },
+      headers: { 'Content-Type': 'application/json', Cookie: `askito_ui=${ui}`, Origin: 'http://127.0.0.1:45991' },
       body: JSON.stringify(body),
     });
     assert.equal(res.status, 200);
@@ -340,34 +340,34 @@ describe('end to end', () => {
     assert.ok((await cli('open', '--url')).stdout.includes(secret));
   });
 
-  test('the skill tells the agent to open the inbox for /askbell', () => {
+  test('the skill tells the agent to open the inbox for /askito', () => {
     const skill = fs.readFileSync(path.join(ROOT, 'skill', 'SKILL.md'), 'utf8');
-    assert.match(skill, /types `\/askbell`/);
-    assert.match(skill, /askbell open/);
+    assert.match(skill, /types `\/askito`/);
+    assert.match(skill, /askito open/);
   });
 
   test('an agent cannot use the command line to approve', async () => {
     const help = await cli('--help');
-    assert.doesNotMatch(help.stdout, /askbell answer/);
+    assert.doesNotMatch(help.stdout, /askito answer/);
     await assert.rejects(cli('answer', 'abc'), /unknown command/);
   });
 
   test('MCP lists its tools and completes a question', async () => {
     const session = mcpSession();
     const init = await session.call('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } });
-    assert.equal(init.result.serverInfo.name, 'askbell');
+    assert.equal(init.result.serverInfo.name, 'askito');
     assert.equal(init.result.protocolVersion, '2025-06-18');
 
     const list = await session.call('tools/list', {});
-    assert.deepEqual(list.result.tools.map((tool) => tool.name), ['askbell_ask', 'askbell_wait', 'askbell_pickup', 'askbell_ack', 'askbell_reply', 'askbell_done']);
+    assert.deepEqual(list.result.tools.map((tool) => tool.name), ['askito_ask', 'askito_wait', 'askito_pickup', 'askito_ack', 'askito_reply', 'askito_done']);
 
-    const asked = await session.call('tools/call', { name: 'askbell_ask', arguments: { title: 'From MCP', project: 'demo', kind: 'approval' } });
+    const asked = await session.call('tools/call', { name: 'askito_ask', arguments: { title: 'From MCP', project: 'demo', kind: 'approval' } });
     const id = asked.result.content[0].text.match(/id: (\w+)/)[1];
 
-    const pending = await session.call('tools/call', { name: 'askbell_wait', arguments: { ids: [id], timeout_seconds: 1 } });
+    const pending = await session.call('tools/call', { name: 'askito_wait', arguments: { ids: [id], timeout_seconds: 1 } });
     assert.match(pending.result.content[0].text, /^PENDING/);
 
-    const waiting = session.call('tools/call', { name: 'askbell_wait', arguments: { ids: [id], timeout_seconds: 20 } });
+    const waiting = session.call('tools/call', { name: 'askito_wait', arguments: { ids: [id], timeout_seconds: 20 } });
     await new Promise((r) => setTimeout(r, 200));
     await answerAsHuman(id, { decision: 'rejected', comment: 'not today' });
     const answered = await waiting;
@@ -387,9 +387,9 @@ describe('end to end', () => {
 describe('setup', () => {
   function sandbox() {
     const fakeHome = tempDir();
-    const home = path.join(fakeHome, '.askbell');
+    const home = path.join(fakeHome, '.askito');
     // PATH holds only node, so no real AI tool on this machine can be touched.
-    const env = { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome, APPDATA: path.join(fakeHome, 'AppData'), ASKBELL_HOME: home, ASKBELL_PORT: '45992', ASKBELL_NO_NOTIFY: '1', PATH: path.dirname(process.execPath) };
+    const env = { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome, APPDATA: path.join(fakeHome, 'AppData'), ASKITO_HOME: home, ASKITO_PORT: '45992', ASKITO_NO_NOTIFY: '1', PATH: path.dirname(process.execPath) };
     const cli = (...args) => run(process.execPath, [BIN, ...args], { env, cwd: fakeHome });
     return { fakeHome, home, cli };
   }
@@ -407,17 +407,17 @@ describe('setup', () => {
 
     const cursor = JSON.parse(fs.readFileSync(path.join(fakeHome, '.cursor', 'mcp.json'), 'utf8'));
     assert.equal(cursor.mcpServers.mine.command, 'x');
-    assert.equal(cursor.mcpServers.askbell.args.at(-1), 'mcp');
-    assert.equal(cursor.mcpServers.askbell.type, 'stdio');
+    assert.equal(cursor.mcpServers.askito.args.at(-1), 'mcp');
+    assert.equal(cursor.mcpServers.askito.type, 'stdio');
     const toml = fs.readFileSync(path.join(fakeHome, '.codex', 'config.toml'), 'utf8');
     assert.match(toml, /model = "x"/);
-    assert.match(toml, /\[mcp_servers\.askbell\]/);
+    assert.match(toml, /\[mcp_servers\.askito\]/);
     const rules = fs.readFileSync(path.join(fakeHome, '.claude', 'CLAUDE.md'), 'utf8');
     assert.match(rules, /Keep this\./);
-    assert.match(rules, /askbell inbox/);
+    assert.match(rules, /askito inbox/);
     assert.match(rules, /mandatory/i);
     assert.match(rules, /AskUserQuestion/);
-    assert.ok(fs.existsSync(path.join(fakeHome, '.claude', 'skills', 'askbell', 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(fakeHome, '.claude', 'skills', 'askito', 'SKILL.md')));
     assert.ok(fs.existsSync(path.join(home, 'backups')));
 
     await cli('setup');
@@ -425,18 +425,18 @@ describe('setup', () => {
     assert.equal(again, rules);
     assert.equal(fs.readFileSync(path.join(fakeHome, '.codex', 'config.toml'), 'utf8'), toml);
 
-    const statusEnv = { env: { ...process.env, HOME: fakeHome, ASKBELL_HOME: home, ASKBELL_PORT: '45992' } };
+    const statusEnv = { env: { ...process.env, HOME: fakeHome, ASKITO_HOME: home, ASKITO_PORT: '45992' } };
     const { stdout } =
       process.platform === 'win32'
-        ? await run('cmd.exe', ['/d', '/c', path.join(home, 'bin', 'askbell.cmd'), 'status'], statusEnv)
-        : await run(path.join(home, 'bin', 'askbell'), ['status'], statusEnv);
+        ? await run('cmd.exe', ['/d', '/c', path.join(home, 'bin', 'askito.cmd'), 'status'], statusEnv)
+        : await run(path.join(home, 'bin', 'askito'), ['status'], statusEnv);
     assert.match(stdout, /running/);
 
     await cli('uninstall');
     assert.equal(fs.readFileSync(path.join(fakeHome, '.claude', 'CLAUDE.md'), 'utf8'), '# My rules\n\nKeep this.\n');
     assert.equal(fs.readFileSync(path.join(fakeHome, '.codex', 'config.toml'), 'utf8'), 'model = "x"\n');
-    assert.equal(JSON.parse(fs.readFileSync(path.join(fakeHome, '.cursor', 'mcp.json'), 'utf8')).mcpServers.askbell, undefined);
-    assert.ok(!fs.existsSync(path.join(fakeHome, '.claude', 'skills', 'askbell')));
+    assert.equal(JSON.parse(fs.readFileSync(path.join(fakeHome, '.cursor', 'mcp.json'), 'utf8')).mcpServers.askito, undefined);
+    assert.ok(!fs.existsSync(path.join(fakeHome, '.claude', 'skills', 'askito')));
   });
 
   test('a config file with comments is left untouched', async () => {

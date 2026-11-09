@@ -9,7 +9,7 @@ import { HttpError, isResolved, Store } from './store.js';
 const MAX_BODY = 256 * 1024;
 const MAX_WAIT_SECONDS = 120;
 const WAITER_GRACE_MS = 90_000;
-const COOKIE = 'askbell_ui';
+const COOKIE = 'askito_ui';
 
 const STATIC_FILES = {
   '/': ['index.html', 'text/html; charset=utf-8'],
@@ -85,7 +85,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
 
   store.on('change', ({ type, item }) => {
     broadcast();
-    if (type === 'created' || type === 'reply') sendNotification(`askbell: ${item.project}`, item.title);
+    if (type === 'created' || type === 'reply') sendNotification(`askito: ${item.project}`, item.title);
   });
 
   function caller(req) {
@@ -154,7 +154,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       throw new HttpError(403, 'bad_origin', 'browser requests must come from the inbox page');
     }
 
-    if (route === 'GET /api/health') return sendJson(res, 200, { name: 'askbell', version: VERSION, pid: process.pid });
+    if (route === 'GET /api/health') return sendJson(res, 200, { name: 'askito', version: VERSION, pid: process.pid });
 
     if (route === 'GET /api/events') {
       require_(who, 'human');
@@ -232,7 +232,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
     if (url.pathname === '/login') {
       if (!sameSecret(url.searchParams.get('t'), tokens.ui)) {
         res.writeHead(401, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('This link is out of date. Run: askbell open\n');
+        res.end('This link is out of date. Run: askito open\n');
         return;
       }
       res.writeHead(302, {
@@ -251,7 +251,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
     }
     if (url.pathname === '/' && caller(req) !== 'human') {
       res.writeHead(401, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('Open the inbox from a terminal: askbell open\n');
+      res.end('Open the inbox from a terminal: askito open\n');
       return;
     }
     res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': entry[1] });
@@ -288,7 +288,7 @@ export function serve() {
   const port = getPort();
   const store = new Store(filePath('items.json'));
   const config = readConfig();
-  const quiet = config.notifications === false || process.env.ASKBELL_NO_NOTIFY === '1';
+  const quiet = config.notifications === false || process.env.ASKITO_NO_NOTIFY === '1';
 
   const stop = () => {
     store.flush();
@@ -310,7 +310,7 @@ export function serve() {
 
   server.on('error', (err) => {
     // Two chats can start the server at once; the loser exits quietly.
-    process.stderr.write(`askbell: ${err.message}\n`);
+    process.stderr.write(`askito: ${err.message}\n`);
     process.exit(err.code === 'EADDRINUSE' ? 3 : 1);
   });
   server.listen(port, '127.0.0.1', () => {

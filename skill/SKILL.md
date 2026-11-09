@@ -1,30 +1,30 @@
 ---
-name: askbell
-description: Mandatory channel for questions, approvals and human-only tasks. Send them to the user's askbell inbox and never ask in chat. Use whenever you need a decision, a go-ahead, missing information, or something only the user can do (log in, pay, sign, click, press a physical button). Also opens the inbox page when the user types /askbell.
+name: askito
+description: Mandatory channel for questions, approvals and human-only tasks. Send them to the user's askito inbox and never ask in chat. Use whenever you need a decision, a go-ahead, missing information, or something only the user can do (log in, pay, sign, click, press a physical button). Also opens the inbox page when the user types /askito.
 ---
 
-# askbell
+# askito
 
 The user runs many AI chats at once and answers all of them from one local inbox page. Posting there is mandatory: do not ask questions in the chat, and do not use chat question tools such as AskUserQuestion or end-of-turn buttons.
 
-The command on this machine is `~/.askbell/bin/askbell`. MCP clients also have the same actions as `askbell_ask`, `askbell_wait`, `askbell_pickup`, `askbell_ack`, `askbell_reply` and `askbell_done`.
+The command on this machine is `~/.askito/bin/askito`. MCP clients also have the same actions as `askito_ask`, `askito_wait`, `askito_pickup`, `askito_ack`, `askito_reply` and `askito_done`.
 
-## When the user types `/askbell`
+## When the user types `/askito`
 
-If the user runs this skill directly with no other task, or asks to open the inbox, run `~/.askbell/bin/askbell open`, say in one line that the inbox is open, and stop.
+If the user runs this skill directly with no other task, or asks to open the inbox, run `~/.askito/bin/askito open`, say in one line that the inbox is open, and stop.
 
 ## Post
 
 ```bash
-~/.askbell/bin/askbell ask "Which database should the reports use?" \
+~/.askito/bin/askito ask "Which database should the reports use?" \
   --body "Reports take 40 s on the replica. Two ways to fix it are below." \
   --option "Materialized view::Fast, refreshes every 10 minutes" \
   --option "Read cache::Fresh, adds Redis" \
   --recommend 1 --chat "reports speedup" --wait
 
-~/.askbell/bin/askbell approve "Run the production migration?" --body "Adds one column. Takes about 2 s." --wait
+~/.askito/bin/askito approve "Run the production migration?" --body "Adds one column. Takes about 2 s." --wait
 
-~/.askbell/bin/askbell task "Accept the Apple agreement" --body "App Store Connect, Business page. Uploads fail until this is done." --wait
+~/.askito/bin/askito task "Accept the Apple agreement" --body "App Store Connect, Business page. Uploads fail until this is done." --wait
 ```
 
 Write for someone who has not seen this chat. The title is the decision or the action. The body says what you found, what each choice costs, and what you recommend. Give `--chat` a short name for your work so the user can tell chats apart.
@@ -40,8 +40,8 @@ Ask one thing per item.
 Pick the first of these your tool supports:
 
 1. If a background command wakes you when it exits (Claude Code: Bash with `run_in_background: true`), run the `--wait` command in the background and keep working on anything that does not depend on the answer.
-2. With MCP, call `askbell_ask`, then `askbell_wait`. On `PENDING`, call `askbell_wait` again.
-3. With only a foreground shell, post without `--wait`, then run `~/.askbell/bin/askbell wait ID --timeout 100`. Exit code 4 means no answer yet, so run it again.
+2. With MCP, call `askito_ask`, then `askito_wait`. On `PENDING`, call `askito_wait` again.
+3. With only a foreground shell, post without `--wait`, then run `~/.askito/bin/askito wait ID --timeout 100`. Exit code 4 means no answer yet, so run it again.
 
 The result has `decision`, and may have `choices` and `comment`:
 
@@ -57,19 +57,19 @@ Read `comment` even when there is a decision. It can change what the decision me
 
 ## After the answer
 
-- Need more detail on the same subject: `~/.askbell/bin/askbell reply ID "Your follow-up"`, then wait again.
-- Finished acting on the answer: `~/.askbell/bin/askbell done ID "What happened, in one line"`.
+- Need more detail on the same subject: `~/.askito/bin/askito reply ID "Your follow-up"`, then wait again.
+- Finished acting on the answer: `~/.askito/bin/askito done ID "What happened, in one line"`.
 
 ## When a session starts
 
-Run `~/.askbell/bin/askbell pickup`. It lists answers no chat has collected for this project, which happens when the user answers after a chat has ended. For each one that belongs to your work, act on it and run `~/.askbell/bin/askbell ack ID`. Leave the others alone, since another chat may be waiting for them.
+Run `~/.askito/bin/askito pickup`. It lists answers no chat has collected for this project, which happens when the user answers after a chat has ended. For each one that belongs to your work, act on it and run `~/.askito/bin/askito ack ID`. Leave the others alone, since another chat may be waiting for them.
 
 ## Setup
 
-If `~/.askbell/bin/askbell` does not exist, run `npx -y github:mahmut-polat/askbell setup`, then tell the user to restart open chats. That one command installs the app, connects every AI tool it finds, adds the mandatory rule and installs this skill. The user has nothing else to configure.
+If `~/.askito/bin/askito` does not exist, run `npx -y github:mahmut-polat/askito setup`, then tell the user to restart open chats. That one command installs the app, connects every AI tool it finds, adds the mandatory rule and installs this skill. The user has nothing else to configure.
 
-A repository shows under its folder name. To change that, run `~/.askbell/bin/askbell alias "Friendly name" /path/to/repo`.
+A repository shows under its folder name. To change that, run `~/.askito/bin/askito alias "Friendly name" /path/to/repo`.
 
-## If askbell fails
+## If askito fails
 
-If the command returns an error or setup does not work, ask in the chat as usual and say that askbell did not work.
+If the command returns an error or setup does not work, ask in the chat as usual and say that askito did not work.

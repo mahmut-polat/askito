@@ -485,7 +485,7 @@ function renderSide() {
     if (item.status === 'open') counts.set(item.project, counts.get(item.project) + 1);
   }
   const total = [...counts.values()].reduce((sum, n) => sum + n, 0);
-  document.title = total ? `(${total}) askbell` : 'askbell';
+  document.title = total ? `(${total}) askito` : 'askito';
   const entry = (name, label, count) =>
     h(
       'li',
@@ -508,11 +508,11 @@ function renderSide() {
       ),
     );
   const names = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a.localeCompare(b, language));
-  const theme = storage.get('askbell.theme') ?? 'auto';
+  const theme = storage.get('askito.theme') ?? 'auto';
   return h(
     'aside',
     { class: 'side' },
-    h('div', { class: 'brand' }, h('img', { src: '/icon.svg', alt: '' }), 'askbell'),
+    h('div', { class: 'brand' }, h('img', { src: '/icon.svg', alt: '' }), 'askito'),
     h('nav', { 'aria-label': t('projects') }, h('h2', {}, t('projects')), h('ul', { class: 'projects' }, entry(null, t('allProjects'), total), names.map((name) => entry(name, projectLabel(name), counts.get(name))))),
     h(
       'div',
@@ -526,7 +526,7 @@ function renderSide() {
           'select',
           {
             onchange: async (event) => {
-              storage.set('askbell.lang', event.target.value);
+              storage.set('askito.lang', event.target.value);
               await loadLanguage(event.target.value);
               render();
             },
@@ -542,7 +542,7 @@ function renderSide() {
           'select',
           {
             onchange: (event) => {
-              storage.set('askbell.theme', event.target.value);
+              storage.set('askito.theme', event.target.value);
               applyTheme(event.target.value);
             },
           },
@@ -665,9 +665,9 @@ document.addEventListener('keydown', (event) => {
 });
 
 async function start() {
-  applyTheme(storage.get('askbell.theme') ?? 'auto');
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(storage.get('askbell.theme') ?? 'auto'));
-  const saved = storage.get('askbell.lang');
+  applyTheme(storage.get('askito.theme') ?? 'auto');
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(storage.get('askito.theme') ?? 'auto'));
+  const saved = storage.get('askito.lang');
   await loadLanguage(saved ?? (navigator.language ?? 'en').slice(0, 2).toLowerCase());
   await refresh();
   render();

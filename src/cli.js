@@ -11,31 +11,31 @@ import { rulesBlock, runSetup, runUninstall } from './setup.js';
 const EXIT_DISMISSED = 3;
 const EXIT_TIMEOUT = 4;
 
-const HELP = `askbell ${VERSION}: one local inbox for every question your AI chats need to ask you.
+const HELP = `askito ${VERSION}: one local inbox for every question your AI chats need to ask you.
 
 Set up
-  askbell setup [--tools claude,codex,...] [--dry-run]
-  askbell uninstall [--purge]
-  askbell instructions             Print the rules to paste into any other AI tool
-  askbell open [--url]             Open the inbox in your browser, or print its link
-  askbell status | start | stop
-  askbell alias "Name" [path]      Show a repository under a friendlier project name
+  askito setup [--tools claude,codex,...] [--dry-run]
+  askito uninstall [--purge]
+  askito instructions             Print the rules to paste into any other AI tool
+  askito open [--url]             Open the inbox in your browser, or print its link
+  askito status | start | stop
+  askito alias "Name" [path]      Show a repository under a friendlier project name
 
 For agents
-  askbell ask "Title" [options]    Post a question
-  askbell approve "Title" [...]    Post an approve-or-reject request
-  askbell task "Title" [...]       Post something only the human can do
+  askito ask "Title" [options]    Post a question
+  askito approve "Title" [...]    Post an approve-or-reject request
+  askito task "Title" [...]       Post something only the human can do
     --body TEXT  --body-file FILE (- reads stdin)
     --option "Label" or "Label::Description" (repeat)
     --recommend N  --multi  --urgent
     --project NAME  --chat NAME  --key STABLE_ID
     --wait  --timeout SECONDS  --json
-  askbell wait ID... [--all] [--timeout SECONDS] [--json]
-  askbell pickup [--project NAME] [--chat NAME] [--json]
-  askbell ack ID
-  askbell reply ID "Follow-up text"
-  askbell done ID ["What happened"]
-  askbell list [--status open|answered|done|dismissed] [--project NAME] [--json]
+  askito wait ID... [--all] [--timeout SECONDS] [--json]
+  askito pickup [--project NAME] [--chat NAME] [--json]
+  askito ack ID
+  askito reply ID "Follow-up text"
+  askito done ID ["What happened"]
+  askito list [--status open|answered|done|dismissed] [--project NAME] [--json]
 
 Exit codes for --wait and wait: 0 answered, 3 removed by the human, 4 timed out.
 `;
@@ -85,7 +85,7 @@ function outputResult(result, values) {
 }
 
 async function post(kind, title, values) {
-  if (!title) throw new Error(`a title is required. Example: askbell ${kind === 'question' ? 'ask' : kind === 'approval' ? 'approve' : 'task'} "What should happen?"`);
+  if (!title) throw new Error(`a title is required. Example: askito ${kind === 'question' ? 'ask' : kind === 'approval' ? 'approve' : 'task'} "What should happen?"`);
   const context = detectContext();
   const { item } = await api('POST', '/api/items', {
     kind,
@@ -166,7 +166,7 @@ export async function main(argv) {
     }
     case 'alias': {
       const [name, target] = rest;
-      if (!name) throw new Error('usage: askbell alias "Project name" [path]');
+      if (!name) throw new Error('usage: askito alias "Project name" [path]');
       const root = detectContext(target ?? process.cwd()).root;
       const config = readConfig();
       writeConfig({ ...config, aliases: { ...config.aliases, [root]: name } });
@@ -180,7 +180,7 @@ export async function main(argv) {
     case 'task':
       return post('task', rest[0], values);
     case 'wait':
-      if (!rest.length) throw new Error('usage: askbell wait ID...');
+      if (!rest.length) throw new Error('usage: askito wait ID...');
       return outputResult(await waitForItems(rest, { timeoutSeconds: Number(values.timeout ?? 0), all: values.all }), values);
     case 'pickup': {
       const query = new URLSearchParams({ project: values.project ?? detectContext().project });
@@ -201,13 +201,13 @@ export async function main(argv) {
       await api('POST', `/api/items/${encodeURIComponent(rest[0])}/ack`, {});
       return 0;
     case 'reply':
-      if (!rest[1]) throw new Error('usage: askbell reply ID "Follow-up text"');
+      if (!rest[1]) throw new Error('usage: askito reply ID "Follow-up text"');
       await api('POST', `/api/items/${encodeURIComponent(rest[0])}/reply`, { text: rest[1] });
       return 0;
     case 'done':
       await api('POST', `/api/items/${encodeURIComponent(rest[0])}/done`, { note: rest[1] });
       return 0;
     default:
-      throw new Error(`unknown command "${command}". Run: askbell --help`);
+      throw new Error(`unknown command "${command}". Run: askito --help`);
   }
 }

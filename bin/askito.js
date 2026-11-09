@@ -6,7 +6,7 @@ main(process.argv.slice(2)).then(
     process.exitCode = code ?? 0;
   },
   (err) => {
-    process.stderr.write(`askbell: ${err.message}\n`);
+    process.stderr.write(`askito: ${err.message}\n`);
     process.exitCode = 1;
   },
 );

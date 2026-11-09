@@ -9,9 +9,9 @@ const cwdField = { type: 'string', description: 'Absolute path of your working d
 
 const TOOLS = [
   {
-    name: 'askbell_ask',
+    name: 'askito_ask',
     description:
-      'Put a question, an approval request or a task for the human into their inbox instead of asking in chat. Write title and body so they make sense with no chat history. Returns an id. Then call askbell_wait, or carry on with other work and call askbell_pickup later.',
+      'Put a question, an approval request or a task for the human into their inbox instead of asking in chat. Write title and body so they make sense with no chat history. Returns an id. Then call askito_wait, or carry on with other work and call askito_pickup later.',
     inputSchema: {
       type: 'object',
       required: ['title'],
@@ -34,7 +34,7 @@ const TOOLS = [
     },
   },
   {
-    name: 'askbell_wait',
+    name: 'askito_wait',
     description: 'Wait for answers to inbox items. Returns PENDING if nothing arrived in timeout_seconds. On PENDING, call it again.',
     inputSchema: {
       type: 'object',
@@ -46,17 +46,17 @@ const TOOLS = [
     },
   },
   {
-    name: 'askbell_pickup',
-    description: 'List answers from the human that no chat has collected yet in this project. Call at the start of a session. Then call askbell_ack on the ones that belong to your work.',
+    name: 'askito_pickup',
+    description: 'List answers from the human that no chat has collected yet in this project. Call at the start of a session. Then call askito_ack on the ones that belong to your work.',
     inputSchema: { type: 'object', properties: { project: { type: 'string' }, chat: { type: 'string' }, cwd: cwdField } },
   },
   {
-    name: 'askbell_ack',
+    name: 'askito_ack',
     description: 'Mark an answered item as received by you, so other chats do not pick it up.',
     inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
   },
   {
-    name: 'askbell_reply',
+    name: 'askito_reply',
     description: 'Send a follow-up on an item. It goes back to waiting for the human.',
     inputSchema: {
       type: 'object',
@@ -70,14 +70,14 @@ const TOOLS = [
     },
   },
   {
-    name: 'askbell_done',
+    name: 'askito_done',
     description: 'Close an item after you have acted on the answer, or withdraw it if it is no longer needed.',
     inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, note: { type: 'string', description: 'One line on what happened.' } } },
   },
 ];
 
 const handlers = {
-  async askbell_ask(args) {
+  async askito_ask(args) {
     const context = detectContext(args.cwd || process.cwd());
     const { item } = await api('POST', '/api/items', {
       ...args,
@@ -86,31 +86,31 @@ const handlers = {
       agent: context.agent,
       cwd: context.cwd,
     });
-    return `Posted to the inbox. id: ${item.id}\nCall askbell_wait with this id to get the answer.`;
+    return `Posted to the inbox. id: ${item.id}\nCall askito_wait with this id to get the answer.`;
   },
-  async askbell_wait({ ids, timeout_seconds: seconds = 50 }) {
+  async askito_wait({ ids, timeout_seconds: seconds = 50 }) {
     if (!Array.isArray(ids) || !ids.length) throw new Error('ids is required');
     const timeoutSeconds = Math.max(1, Math.min(Number(seconds) || 50, MAX_WAIT));
     const result = await waitForItems(ids, { timeoutSeconds });
-    if (!result.ready.length) return `PENDING: the human has not answered ${ids.join(', ')}. Call askbell_wait again.`;
+    if (!result.ready.length) return `PENDING: the human has not answered ${ids.join(', ')}. Call askito_wait again.`;
     return result.ready.map(formatItem).join('\n\n');
   },
-  async askbell_pickup(args) {
+  async askito_pickup(args) {
     const context = detectContext(args.cwd || process.cwd());
     const query = new URLSearchParams({ project: args.project || context.project });
     if (args.chat) query.set('chat', args.chat);
     const { items } = await api('GET', `/api/pickup?${query}`);
     return items.length ? items.map(formatItem).join('\n\n') : 'No uncollected answers.';
   },
-  async askbell_ack({ id }) {
+  async askito_ack({ id }) {
     await api('POST', `/api/items/${encodeURIComponent(id)}/ack`, {});
     return `Received ${id}.`;
   },
-  async askbell_reply({ id, ...body }) {
+  async askito_reply({ id, ...body }) {
     await api('POST', `/api/items/${encodeURIComponent(id)}/reply`, body);
-    return `Sent. ${id} is waiting for the human again. Call askbell_wait.`;
+    return `Sent. ${id} is waiting for the human again. Call askito_wait.`;
   },
-  async askbell_done({ id, note }) {
+  async askito_done({ id, note }) {
     await api('POST', `/api/items/${encodeURIComponent(id)}/done`, { note });
     return `Closed ${id}.`;
   },
@@ -122,8 +122,8 @@ async function handle(message) {
     return {
       protocolVersion: params?.protocolVersion ?? '2025-06-18',
       capabilities: { tools: {} },
-      serverInfo: { name: 'askbell', version: VERSION },
-      instructions: 'Use askbell_ask for any question, approval or task for the human, instead of asking in chat. Then askbell_wait for the answer.',
+      serverInfo: { name: 'askito', version: VERSION },
+      instructions: 'Use askito_ask for any question, approval or task for the human, instead of asking in chat. Then askito_wait for the answer.',
     };
   }
   if (method === 'ping') return {};
@@ -134,7 +134,7 @@ async function handle(message) {
     try {
       return { content: [{ type: 'text', text: await handler(params.arguments ?? {}) }] };
     } catch (err) {
-      return { content: [{ type: 'text', text: `askbell error: ${err.message}` }], isError: true };
+      return { content: [{ type: 'text', text: `askito error: ${err.message}` }], isError: true };
     }
   }
   throw Object.assign(new Error(`Method not found: ${method}`), { rpcCode: -32601 });

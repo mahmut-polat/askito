@@ -5,17 +5,17 @@ import path from 'node:path';
 import { stopServer } from './client.js';
 import { homeDir, PACKAGE_ROOT } from './paths.js';
 
-const MD_START = '<!-- askbell:start -->';
-const MD_END = '<!-- askbell:end -->';
-const TOML_START = '# askbell:start';
-const TOML_END = '# askbell:end';
+const MD_START = '<!-- askito:start -->';
+const MD_END = '<!-- askito:end -->';
+const TOML_START = '# askito:start';
+const TOML_END = '# askito:end';
 const APP_PARTS = ['bin', 'src', 'web', 'skill', 'package.json'];
 const isWindows = process.platform === 'win32';
 
 const home = () => process.env.HOME || process.env.USERPROFILE || os.homedir();
 const inHome = (...parts) => path.join(home(), ...parts);
 const appDir = () => path.join(homeDir(), 'app');
-const shimPath = () => path.join(homeDir(), 'bin', isWindows ? 'askbell.cmd' : 'askbell');
+const shimPath = () => path.join(homeDir(), 'bin', isWindows ? 'askito.cmd' : 'askito');
 
 function vscodeUserDir(product = 'Code') {
   if (process.platform === 'darwin') return inHome('Library', 'Application Support', product, 'User');
@@ -31,7 +31,7 @@ const exists = (...candidates) => candidates.some((p) => fs.existsSync(p));
 
 // Only paths confirmed against each vendor's current docs belong here. A tool
 // without a confirmed path gets the plain command line rules through
-// `askbell instructions`, because writing a guessed file helps nobody.
+// `askito instructions`, because writing a guessed file helps nobody.
 function adapters() {
   const code = vscodeUserDir();
   const ext = (id) => path.join(code, 'globalStorage', id, 'settings');
@@ -104,7 +104,7 @@ function adapters() {
       name: 'Kiro',
       detect: () => onPath('kiro') || exists(inHome('.kiro')),
       mcp: { file: inHome('.kiro', 'settings', 'mcp.json'), key: 'mcpServers' },
-      rules: inHome('.kiro', 'steering', 'askbell.md'),
+      rules: inHome('.kiro', 'steering', 'askito.md'),
     },
     {
       id: 'zed',
@@ -116,30 +116,30 @@ function adapters() {
 }
 
 function localize(text) {
-  if (isWindows) return text.replaceAll('~/.askbell/bin/askbell', shimPath()).replaceAll('~/.askbell', homeDir());
-  const defaultHome = path.join(os.homedir(), '.askbell');
-  return homeDir() === defaultHome ? text : text.replaceAll('~/.askbell', homeDir());
+  if (isWindows) return text.replaceAll('~/.askito/bin/askito', shimPath()).replaceAll('~/.askito', homeDir());
+  const defaultHome = path.join(os.homedir(), '.askito');
+  return homeDir() === defaultHome ? text : text.replaceAll('~/.askito', homeDir());
 }
 
 export function rulesBlock() {
-  return localize(`## askbell inbox (mandatory)
+  return localize(`## askito inbox (mandatory)
 
-This rule is mandatory and takes priority over any habit or other instruction to ask in the chat. Every question, decision, approval and human-only task for the user goes to the askbell inbox. Do not ask them in the chat, and do not use chat question tools such as AskUserQuestion or end-of-turn buttons. The user runs many chats at once and answers them from one page. The only exception is an askbell command that fails.
+This rule is mandatory and takes priority over any habit or other instruction to ask in the chat. Every question, decision, approval and human-only task for the user goes to the askito inbox. Do not ask them in the chat, and do not use chat question tools such as AskUserQuestion or end-of-turn buttons. The user runs many chats at once and answers them from one page. The only exception is an askito command that fails.
 
-- Command: \`~/.askbell/bin/askbell\`, or the \`askbell_*\` MCP tools.
-- Post: \`~/.askbell/bin/askbell ask "Title" --body "Context" --option "A" --option "B" --recommend 1 --chat "short name" --wait\`. Use \`approve\` for a go-ahead and \`task\` for something only the user can do.
+- Command: \`~/.askito/bin/askito\`, or the \`askito_*\` MCP tools.
+- Post: \`~/.askito/bin/askito ask "Title" --body "Context" --option "A" --option "B" --recommend 1 --chat "short name" --wait\`. Use \`approve\` for a go-ahead and \`task\` for something only the user can do.
 - Write the title and body for someone who has not seen this chat.
-- Wait with a background command if your tool wakes you when it exits. Otherwise use \`askbell_wait\` or \`~/.askbell/bin/askbell wait ID --timeout 100\` and repeat on exit code 4.
+- Wait with a background command if your tool wakes you when it exits. Otherwise use \`askito_wait\` or \`~/.askito/bin/askito wait ID --timeout 100\` and repeat on exit code 4.
 - Keep working on whatever does not depend on the answer.
-- At session start run \`~/.askbell/bin/askbell pickup\` for answers given after a chat ended, and \`ack\` the ones that are yours.
-- When you have acted on an answer, run \`~/.askbell/bin/askbell done ID "what happened"\`.
-- If askbell fails, ask in the chat and say so.
+- At session start run \`~/.askito/bin/askito pickup\` for answers given after a chat ended, and \`ack\` the ones that are yours.
+- When you have acted on an answer, run \`~/.askito/bin/askito done ID "what happened"\`.
+- If askito fails, ask in the chat and say so.
 
-Full guide: \`~/.askbell/app/skill/SKILL.md\`.`);
+Full guide: \`~/.askito/app/skill/SKILL.md\`.`);
 }
 
 function mcpCommand() {
-  if (isWindows) return { command: process.execPath, args: [path.join(appDir(), 'bin', 'askbell.js'), 'mcp'] };
+  if (isWindows) return { command: process.execPath, args: [path.join(appDir(), 'bin', 'askito.js'), 'mcp'] };
   return { command: shimPath(), args: ['mcp'] };
 }
 
@@ -154,7 +154,7 @@ function backup(file, log) {
 
 function writeAtomic(file, content) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.askbell-tmp`;
+  const tmp = `${file}.askito-tmp`;
   const mode = fs.existsSync(file) ? fs.statSync(file).mode & 0o777 : 0o644;
   fs.writeFileSync(tmp, content, { mode });
   fs.renameSync(tmp, file);
@@ -172,12 +172,12 @@ function setJsonServer(file, key, entry, log) {
     data = readJsonFile(file);
   } catch {
     // Never rewrite a file we cannot fully parse, such as JSON with comments.
-    log.push(`SKIPPED ${file}: it is not plain JSON. Add this under "${key}": ${JSON.stringify({ askbell: entry })}`);
+    log.push(`SKIPPED ${file}: it is not plain JSON. Add this under "${key}": ${JSON.stringify({ askito: entry })}`);
     return false;
   }
-  if (JSON.stringify(data[key]?.askbell) === JSON.stringify(entry)) return true;
+  if (JSON.stringify(data[key]?.askito) === JSON.stringify(entry)) return true;
   backup(file, log);
-  data[key] = { ...data[key], askbell: entry };
+  data[key] = { ...data[key], askito: entry };
   writeAtomic(file, `${JSON.stringify(data, null, 2)}\n`);
   log.push(`mcp ${file}`);
   return true;
@@ -188,12 +188,12 @@ function removeJsonServer(file, key, log) {
   try {
     data = readJsonFile(file);
   } catch {
-    log.push(`SKIPPED ${file}: it is not plain JSON. Remove "askbell" by hand.`);
+    log.push(`SKIPPED ${file}: it is not plain JSON. Remove "askito" by hand.`);
     return;
   }
-  if (!data[key]?.askbell) return;
+  if (!data[key]?.askito) return;
   backup(file, log);
-  delete data[key].askbell;
+  delete data[key].askito;
   writeAtomic(file, `${JSON.stringify(data, null, 2)}\n`);
   log.push(`removed mcp from ${file}`);
 }
@@ -228,7 +228,7 @@ function removeBlock(file, start, end, log) {
 
 function tomlBlock() {
   const { command, args } = mcpCommand();
-  return `[mcp_servers.askbell]\ncommand = ${JSON.stringify(command)}\nargs = ${JSON.stringify(args)}\ntool_timeout_sec = 130`;
+  return `[mcp_servers.askito]\ncommand = ${JSON.stringify(command)}\nargs = ${JSON.stringify(args)}\ntool_timeout_sec = 130`;
 }
 
 function claudeCli(args) {
@@ -243,8 +243,8 @@ function installMcp(tool, log) {
   const { command, args } = mcpCommand();
   if (tool.toml) {
     const existing = fs.existsSync(tool.toml) ? fs.readFileSync(tool.toml, 'utf8') : '';
-    if (existing.includes('[mcp_servers.askbell]') && !existing.includes(TOML_START)) {
-      log.push(`SKIPPED ${tool.toml}: it already has an askbell entry that setup did not write.`);
+    if (existing.includes('[mcp_servers.askito]') && !existing.includes(TOML_START)) {
+      log.push(`SKIPPED ${tool.toml}: it already has an askito entry that setup did not write.`);
       return;
     }
     writeBlock(tool.toml, TOML_START, TOML_END, tomlBlock(), log);
@@ -255,11 +255,11 @@ function installMcp(tool, log) {
     // The tool rewrites this file constantly, so its own command is the safe writer.
     try {
       try {
-        claudeCli(['mcp', 'remove', '--scope', 'user', 'askbell']);
+        claudeCli(['mcp', 'remove', '--scope', 'user', 'askito']);
       } catch {
         // Nothing registered yet.
       }
-      claudeCli(['mcp', 'add', '--scope', 'user', 'askbell', '--', command, ...args]);
+      claudeCli(['mcp', 'add', '--scope', 'user', 'askito', '--', command, ...args]);
       log.push('mcp registered with claude mcp add');
       return;
     } catch {
@@ -277,7 +277,7 @@ function uninstallMcp(tool, log) {
   if (!tool.mcp) return;
   if (useToolCli(tool)) {
     try {
-      claudeCli(['mcp', 'remove', '--scope', 'user', 'askbell']);
+      claudeCli(['mcp', 'remove', '--scope', 'user', 'askito']);
       log.push('mcp removed with claude mcp remove');
       return;
     } catch {
@@ -298,7 +298,7 @@ function installApp(log) {
   }
   const shim = shimPath();
   fs.mkdirSync(path.dirname(shim), { recursive: true, mode: 0o700 });
-  const entry = path.join(target, 'bin', 'askbell.js');
+  const entry = path.join(target, 'bin', 'askito.js');
   if (isWindows) {
     fs.writeFileSync(shim, `@echo off\r\n"${process.execPath}" "${entry}" %*\r\n`);
   } else {
@@ -319,7 +319,7 @@ function chooseTools(values) {
 }
 
 function installSkill(dir, log) {
-  const file = path.join(dir, 'askbell', 'SKILL.md');
+  const file = path.join(dir, 'askito', 'SKILL.md');
   writeAtomic(file, localize(fs.readFileSync(path.join(PACKAGE_ROOT, 'skill', 'SKILL.md'), 'utf8')));
   log.push(`skill ${file}`);
 }
@@ -332,7 +332,7 @@ export async function runSetup(values) {
     out('Dry run, nothing was written.');
     out(`Would install the app in ${appDir()}`);
     for (const tool of tools) {
-      const targets = [tool.mcp?.file, tool.toml, tool.rules, ...(tool.skills ?? []).map((d) => path.join(d, 'askbell', 'SKILL.md'))].filter(Boolean);
+      const targets = [tool.mcp?.file, tool.toml, tool.rules, ...(tool.skills ?? []).map((d) => path.join(d, 'askito', 'SKILL.md'))].filter(Boolean);
       out(`${tool.name}:`);
       targets.forEach((target) => out(`  ${target}`));
     }
@@ -351,10 +351,10 @@ export async function runSetup(values) {
   }
   log.forEach((line) => out(line));
 
-  execFileSync(process.execPath, [path.join(appDir(), 'bin', 'askbell.js'), 'start'], { stdio: 'ignore', windowsHide: true });
+  execFileSync(process.execPath, [path.join(appDir(), 'bin', 'askito.js'), 'start'], { stdio: 'ignore', windowsHide: true });
   out('');
-  out(tools.length ? `Connected: ${tools.map((tool) => tool.name).join(', ')}` : 'No AI tool detected. Use --tools, or paste the output of: askbell instructions');
-  out('Restart open AI chats so they load askbell.');
+  out(tools.length ? `Connected: ${tools.map((tool) => tool.name).join(', ')}` : 'No AI tool detected. Use --tools, or paste the output of: askito instructions');
+  out('Restart open AI chats so they load askito.');
   out(`Open the inbox: ${shimPath()} open`);
   return 0;
 }
@@ -365,18 +365,18 @@ export async function runUninstall(values) {
   const log = [];
   for (const tool of adapters()) {
     uninstallMcp(tool, log);
-    for (const dir of tool.skills ?? []) fs.rmSync(path.join(dir, 'askbell'), { recursive: true, force: true });
+    for (const dir of tool.skills ?? []) fs.rmSync(path.join(dir, 'askito'), { recursive: true, force: true });
     if (tool.rules) removeBlock(tool.rules, MD_START, MD_END, log);
   }
-  fs.rmSync(path.join(inHome('.agents', 'skills'), 'askbell'), { recursive: true, force: true });
+  fs.rmSync(path.join(inHome('.agents', 'skills'), 'askito'), { recursive: true, force: true });
   fs.rmSync(appDir(), { recursive: true, force: true });
   fs.rmSync(path.dirname(shimPath()), { recursive: true, force: true });
   log.forEach((line) => out(line));
   if (values.purge) {
     fs.rmSync(homeDir(), { recursive: true, force: true });
-    out('askbell and all its data are gone.');
+    out('askito and all its data are gone.');
   } else {
-    out(`askbell is removed. Your inbox data stays in ${homeDir()}. Delete it with: uninstall --purge`);
+    out(`askito is removed. Your inbox data stays in ${homeDir()}. Delete it with: uninstall --purge`);
   }
   return 0;
 }

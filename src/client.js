@@ -11,7 +11,7 @@ async function health() {
   try {
     const res = await fetch(`${base()}/api/health`, { signal: AbortSignal.timeout(1500) });
     const body = await res.json().catch(() => null);
-    return body?.name === 'askbell' ? body : { foreign: true };
+    return body?.name === 'askito' ? body : { foreign: true };
   } catch {
     return null;
   }
@@ -46,7 +46,7 @@ export async function stopServer() {
 
 export async function ensureServer() {
   let current = await health();
-  if (current?.foreign) throw new Error(`port ${getPort()} is used by another program. Set a different one: ASKBELL_PORT=<port>`);
+  if (current?.foreign) throw new Error(`port ${getPort()} is used by another program. Set a different one: ASKITO_PORT=<port>`);
   if (current && isOlder(current.version, VERSION)) {
     await stopServer();
     current = null;
@@ -55,7 +55,7 @@ export async function ensureServer() {
 
   fs.mkdirSync(path.dirname(filePath('server.log')), { recursive: true, mode: 0o700 });
   const log = fs.openSync(filePath('server.log'), 'a', 0o600);
-  const child = spawn(process.execPath, [path.join(PACKAGE_ROOT, 'bin', 'askbell.js'), 'serve'], {
+  const child = spawn(process.execPath, [path.join(PACKAGE_ROOT, 'bin', 'askito.js'), 'serve'], {
     detached: true,
     windowsHide: true,
     stdio: ['ignore', log, log],

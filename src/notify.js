@@ -15,8 +15,8 @@ export function notify(rawTitle, rawBody) {
     const script =
       'Add-Type -AssemblyName System.Windows.Forms;' +
       '$n=New-Object System.Windows.Forms.NotifyIcon;$n.Icon=[System.Drawing.SystemIcons]::Information;$n.Visible=$true;' +
-      '$n.ShowBalloonTip(6000,$env:ASKBELL_N_TITLE,$env:ASKBELL_N_BODY,"Info");Start-Sleep 7;$n.Dispose()';
-    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { env: { ...process.env, ASKBELL_N_TITLE: title, ASKBELL_N_BODY: body } }, ignore);
+      '$n.ShowBalloonTip(6000,$env:ASKITO_N_TITLE,$env:ASKITO_N_BODY,"Info");Start-Sleep 7;$n.Dispose()';
+    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { env: { ...process.env, ASKITO_N_TITLE: title, ASKITO_N_BODY: body } }, ignore);
   } else {
     execFile('notify-send', ['--', title, body], ignore);
   }

@@ -59,8 +59,8 @@
   "emptyRemovedBody": "Items you remove stay here and can be restored.",
   "noMatch": "Nothing matches this search.",
   "listEnd": "End of the list",
-  "errorGeneric": "That did not go through. Check that askbell is still running, then try again.",
-  "errorSession": "This page lost its session. Run askbell open in a terminal.",
+  "errorGeneric": "That did not go through. Check that askito is still running, then try again.",
+  "errorSession": "This page lost its session. Run askito open in a terminal.",
   "announceSent": "Sent",
   "unsorted": "Unsorted"
 }

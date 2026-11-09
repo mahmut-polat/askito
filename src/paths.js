@@ -9,7 +9,7 @@ export const VERSION = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'packa
 export const DEFAULT_PORT = 4517;
 
 export function homeDir() {
-  return process.env.ASKBELL_HOME || path.join(os.homedir(), '.askbell');
+  return process.env.ASKITO_HOME || path.join(os.homedir(), '.askito');
 }
 
 export function filePath(name) {
@@ -34,7 +34,7 @@ export function writeConfig(config) {
 }
 
 export function getPort() {
-  return Number(process.env.ASKBELL_PORT || readConfig().port || DEFAULT_PORT);
+  return Number(process.env.ASKITO_PORT || readConfig().port || DEFAULT_PORT);
 }
 
 // Two separate secrets: agents get one, the browser gets the other. Answer
