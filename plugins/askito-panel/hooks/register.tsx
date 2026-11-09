@@ -264,6 +264,18 @@ export const register: Register = on => {
       </Button>
     )
 
+    // Panel text cannot be selected, so the question gets a copy button.
+    const copyButton = (item: InboxItem) => (
+      <Button
+        key={`copy-${item.id}`}
+        dimColor
+        label={t('copy')}
+        onPress={press => {
+          void $.ui.copy({ text: [item.title, item.body].filter(Boolean).join('\n\n'), surface: press.surface }).then(() => $.ui.toast(t('copied')))
+        }}
+      />
+    )
+
     const detail = (item: InboxItem) => {
       const comment = () => drafts[item.id]?.trim() || undefined
       const answer = (body: object) => () => void act($, item.id, 'answer', { ...body, comment: comment() })
@@ -292,7 +304,7 @@ export const register: Register = on => {
       }[item.kind]
 
       return (
-        <Box flexDirection="column" gap="sm" marginTop="sm">
+        <Box flexDirection="column" gap="sm" marginTop="sm" paddingLeft="xs">
           {item.body ? <Markdown text={item.body} /> : null}
           <Text size="caption" dimColor>
             {item.agentWaiting ? t('chatWaiting') : t('chatAway')}
@@ -320,6 +332,7 @@ export const register: Register = on => {
           <Box flexDirection="row" flexWrap="wrap" gap="sm" alignItems="center">
             {actions}
             <Box flexGrow={1} />
+            {copyButton(item)}
             <Button key={`later-${item.id}`} variant="secondary" label={t('later')} onPress={() => void act($, item.id, 'later', { later: true })} />
             {remove}
           </Box>
@@ -333,7 +346,7 @@ export const register: Register = on => {
     }
 
     const agentDetail = (item: InboxItem) => (
-      <Box flexDirection="column" gap="xs" marginTop="sm">
+      <Box flexDirection="column" gap="xs" marginTop="sm" paddingLeft="xs">
         {item.body ? <Markdown text={item.body} /> : null}
         {eventLines(item, t).map(line => (
           <Text size="caption">{line}</Text>
@@ -341,6 +354,7 @@ export const register: Register = on => {
         <Box flexDirection="row" flexWrap="wrap" gap="sm" alignItems="center" marginTop="xs">
           <Button key={`complete-${item.id}`} variant="primary" label={t('complete')} onPress={() => void act($, item.id, 'close', {})} />
           <Button key={`change-${item.id}`} variant="secondary" label={t('changeAnswer')} onPress={() => void act($, item.id, 'reopen', {})} />
+          {copyButton(item)}
         </Box>
       </Box>
     )
@@ -355,6 +369,7 @@ export const register: Register = on => {
     const row = (item: InboxItem, index: number) => {
       const state = mode === 'agents' ? chatState(item, t) : null
       const isOpen = item.id === openId
+      const toggle = () => void update($, selected, () => (isOpen ? null : item.id))
       return (
         <Box flexDirection="row" gap="sm" alignItems="flex-start">
           <Box width={3} flexShrink={0} paddingTop="xs">
@@ -364,39 +379,34 @@ export const register: Register = on => {
           </Box>
           <Svg source={kindSvg(item.kind)} alt={t(KIND_LABEL[item.kind])} width={32} height={32} />
           <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-            <Box flexDirection="row" justifyContent="space-between" alignItems="flex-start" gap="sm">
-              <Box flexShrink={1} minWidth={0}>
-                <Text weight="semibold">{item.title}</Text>
-              </Box>
-              <Button key={`toggle-${item.id}`} dimColor label={isOpen ? t('panelClose') : t('panelOpen')} onPress={() => void update($, selected, () => (isOpen ? null : item.id))} />
-            </Box>
-            <Box flexDirection="row" flexWrap="wrap" columnGap="sm" alignItems="center">
-              <Box backgroundColor={badgeColor(item.project)} paddingX={1}>
-                <Text size="caption" weight="medium">
-                  {projectName(item.project)}
-                </Text>
-              </Box>
+            <Button key={`toggle-${item.id}`} plain onPress={toggle}>
+              <Text weight="semibold">{item.title}</Text>
+            </Button>
+            <Button key={`toggle-meta-${item.id}`} plain onPress={toggle}>
+              <Text size="caption" weight="medium" backgroundColor={badgeColor(item.project)}>
+                {` ${projectName(item.project)} `}
+              </Text>
+              {'  '}
               <Text size="caption" weight="medium">
                 {t(KIND_LABEL[item.kind])}
               </Text>
               {item.urgent ? (
                 <Text size="caption" weight="medium" color="red">
-                  {t('urgent')}
+                  {`  ${t('urgent')}`}
                 </Text>
-              ) : null}
-              {item.chat ? (
-                <Text size="caption" dimColor>
-                  {item.chat}
-                </Text>
-              ) : null}
-              <Text size="caption" dimColor tabular>
-                {stamp(item.createdAt)}
+              ) : (
+                ''
+              )}
+              <Text size="caption" dimColor>
+                {`${item.chat ? `  ${item.chat}` : ''}  ${stamp(item.createdAt)}`}
               </Text>
-            </Box>
+            </Button>
             {state ? (
-              <Text size="caption" weight="medium" color={TONE[state.tone]}>
-                {state.note ? `${state.label}: ${state.note}` : state.label}
-              </Text>
+              <Button key={`toggle-state-${item.id}`} plain onPress={toggle}>
+                <Text size="caption" weight="medium" color={TONE[state.tone]}>
+                  {state.note ? `${state.label}: ${state.note}` : state.label}
+                </Text>
+              </Button>
             ) : null}
             {isOpen ? (mode === 'agents' ? agentDetail(item) : detail(item)) : null}
           </Box>

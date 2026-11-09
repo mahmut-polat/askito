@@ -454,6 +454,25 @@ function resultOf(item) {
   return item.messages.filter((m) => m.kind === 'result' || m.from === 'agent').at(-1)?.text ?? null;
 }
 
+function copyButton(item) {
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn copy',
+      onclick: async (event) => {
+        const control = event.currentTarget;
+        await navigator.clipboard.writeText([item.title, item.body].filter(Boolean).join('\n\n'));
+        control.textContent = t('copied');
+        setTimeout(() => {
+          control.textContent = t('copy');
+        }, 1500);
+      },
+    },
+    t('copy'),
+  );
+}
+
 function assignControls(item) {
   const { projects, sessions } = state.directory;
   const others = sessions.filter((session) => session.id !== item.sessionId);
@@ -603,15 +622,26 @@ function renderRow(item, index) {
     h('time', { datetime: item.createdAt }, `${stamp(item.createdAt)} (${relative(item.createdAt)})`),
     progress ? h('span', { class: `state state-${progress.tone}` }, progress.label) : null,
   );
+  const toggle = () => {
+    state.selected = isOpen ? null : item.id;
+    render();
+  };
+  // A div, because the text inside a button cannot be selected and copied.
   const header = h(
-    'button',
+    'div',
     {
-      type: 'button',
       class: 'row-head',
+      role: 'button',
+      tabindex: '0',
       'aria-expanded': String(isOpen),
       onclick: () => {
-        state.selected = isOpen ? null : item.id;
-        render();
+        if (!window.getSelection()?.toString()) toggle();
+      },
+      onkeydown: (event) => {
+        if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault();
+          toggle();
+        }
       },
     },
     h('span', { class: 'row-num' }, String(index + 1)),
@@ -624,6 +654,7 @@ function renderRow(item, index) {
         'div',
         { class: 'detail' },
         item.body ? markdown(item.body) : null,
+        copyButton(item),
         timeline(item),
         item.status === 'open' ? h('p', { class: `note${item.agentWaiting ? ' live' : ''}` }, item.agentWaiting ? t('chatWaiting') : t('chatAway')) : null,
         item.status === 'open' ? openControls(item, row) : resolvedControls(item),

@@ -164,7 +164,7 @@ test('rows are grouped by project and then by day', async ($, on) => {
   await start($, on, { items: [ITEM, OTHER] })
   const ui = await $.ui.mount(PANE)
   const texts = (await ui.findAll({ type: 'Text' })).map(found => found.text)
-  expect(texts.filter(text => text === 'billing').length).toBeGreaterThanOrEqual(2)
+  expect(texts.filter(text => text?.trim() === 'billing').length).toBeGreaterThanOrEqual(2)
   expect(texts.some(text => /Nov 9|today|yesterday/i.test(text ?? ''))).toBe(true)
   await ui.unmount()
 })
@@ -177,6 +177,30 @@ test('the newest item is on top, and the sort can be changed', async ($, on) => 
   await ui.select({ key: 'sort', value: 'oldest' })
   for (let i = 0; i < 100; i += 1) await Promise.resolve()
   expect(await position('Run the migration?')).toBeLessThan(await position('Pick a colour'))
+  await ui.unmount()
+})
+
+test('copy puts the question on the clipboard', async ($, on) => {
+  const copied: string[] = []
+  on('ui.copy', (_: unknown, e: { text: string }) => {
+    copied.push(e.text)
+    return { value: { isCopied: true } }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  await start($, on)
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'toggle-abc123' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  await ui.press({ key: 'copy-abc123' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect(copied).toEqual(['Run the migration?\n\nAdds one column.'])
+  await ui.unmount()
+})
+
+test('the title itself opens the row, with no separate open button', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount(PANE)
+  expect((await ui.find({ key: 'toggle-abc123' }))?.text).toBe('Run the migration?')
   await ui.unmount()
 })
 

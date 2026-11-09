@@ -353,6 +353,13 @@ kbd {
   cursor: pointer;
 }
 
+.btn.copy {
+  justify-self: start;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  font-size: 13px;
+}
+
 .row-num {
   padding-top: 6px;
   text-align: end;
