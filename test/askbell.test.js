@@ -401,6 +401,8 @@ describe('setup', () => {
     const rules = fs.readFileSync(path.join(fakeHome, '.claude', 'CLAUDE.md'), 'utf8');
     assert.match(rules, /Keep this\./);
     assert.match(rules, /askbell inbox/);
+    assert.match(rules, /mandatory/i);
+    assert.match(rules, /AskUserQuestion/);
     assert.ok(fs.existsSync(path.join(fakeHome, '.claude', 'skills', 'askbell', 'SKILL.md')));
     assert.ok(fs.existsSync(path.join(home, 'backups')));
 

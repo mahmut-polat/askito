@@ -122,9 +122,9 @@ function localize(text) {
 }
 
 export function rulesBlock() {
-  return localize(`## askbell inbox
+  return localize(`## askbell inbox (mandatory)
 
-Send every question, approval and human-only task to the askbell inbox instead of asking in the chat. The user runs many chats at once and answers them from one page.
+This rule is mandatory and takes priority over any habit or other instruction to ask in the chat. Every question, decision, approval and human-only task for the user goes to the askbell inbox. Do not ask them in the chat, and do not use chat question tools such as AskUserQuestion or end-of-turn buttons. The user runs many chats at once and answers them from one page. The only exception is an askbell command that fails.
 
 - Command: \`~/.askbell/bin/askbell\`, or the \`askbell_*\` MCP tools.
 - Post: \`~/.askbell/bin/askbell ask "Title" --body "Context" --option "A" --option "B" --recommend 1 --chat "short name" --wait\`. Use \`approve\` for a go-ahead and \`task\` for something only the user can do.
