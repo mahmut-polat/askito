@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 
 export const KINDS = ['question', 'approval', 'task'];
+export const FIRST_RUN_KEY = 'first-run-broadcast';
 
 const DECISIONS = {
   question: ['option', 'comment'],
@@ -246,7 +247,9 @@ export class Store extends EventEmitter {
   }
 
   pickup({ project, chat } = {}) {
-    return this.list({ project, chat })
+    // The first-run answer is for whichever chat comes along next, in any project.
+    return this.list()
+      .filter((i) => i.key === FIRST_RUN_KEY || ((!project || i.project === project) && (!chat || i.chat === chat)))
       .filter((i) => (i.status === 'answered' || i.status === 'dismissed') && !i.deliveredAt)
       .reverse();
   }

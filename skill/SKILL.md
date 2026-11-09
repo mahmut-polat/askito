@@ -64,9 +64,21 @@ Read `comment` even when there is a decision. It can change what the decision me
 
 Run `~/.askito/bin/askito pickup`. It lists answers no chat has collected for this project, which happens when the user answers after a chat has ended. For each one that belongs to your work, act on it and run `~/.askito/bin/askito ack ID`. Leave the others alone, since another chat may be waiting for them.
 
+## First run
+
+A new install puts one approval in the inbox, with `key: first-run-broadcast`. It asks whether to tell the chats that are already open about askito. `pickup` shows the answer in every project, and whoever installed askito gets its id from the setup output and can `wait` on it.
+
+If the decision is `approved`, run `ack ID`. Then send every other running session this message with your tool's own way of reaching them (in Claude Code: `ListAgents`, then `SendMessage` to each one):
+
+> The user asked every session to start using the askito inbox. From now on, send every question, decision, approval and human-only task to `~/.askito/bin/askito` instead of asking in the chat. The full guide is in `~/.askito/app/skill/SKILL.md`. Run `~/.askito/bin/askito pickup` now, move any question still waiting in your chat to the inbox, and carry on with your work. No reply is needed.
+
+Finish with `done ID "Told N sessions"`, and list any session the message did not reach. If your tool cannot reach other sessions, say that in the `done` note and tell the user to restart those chats.
+
+If the decision is `rejected` or `dismissed`, run `ack ID` and `done ID`, and send nothing.
+
 ## Setup
 
-If `~/.askito/bin/askito` does not exist, run `npx -y github:mahmut-polat/askito setup`, then tell the user to restart open chats. That one command installs the app, connects every AI tool it finds, adds the mandatory rule and installs this skill. The user has nothing else to configure.
+If `~/.askito/bin/askito` does not exist, run `npx -y github:mahmut-polat/askito setup`, then wait for the first question as described in "First run". That one command installs the app, connects every AI tool it finds, adds the mandatory rule and installs this skill. The user has nothing else to configure.
 
 A repository shows under its folder name. To change that, run `~/.askito/bin/askito alias "Friendly name" /path/to/repo`.
 

@@ -123,6 +123,7 @@ export function inboxUrl() {
 
 export function formatItem(item) {
   const lines = [`id: ${item.id}`, `title: ${item.title}`, `status: ${item.status}`];
+  if (item.key) lines.push(`key: ${item.key}`);
   if (item.answer) {
     lines.push(`decision: ${item.answer.decision}`);
     if (item.answer.choices.length) lines.push(`choices: ${item.answer.choices.join(' | ')}`);

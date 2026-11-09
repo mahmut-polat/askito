@@ -7,6 +7,7 @@ import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { formatItem } from '../src/client.js';
 import { createApp } from '../src/server.js';
 import { Store } from '../src/store.js';
 
@@ -99,6 +100,15 @@ describe('store', () => {
     store.answer(other.id, { decision: 'comment', comment: 'z' });
     store.ack(b.id);
     assert.deepEqual(store.pickup({ project: 'p' }).map((i) => i.id), [a.id]);
+  });
+
+  test('the first-run question reaches pickup in every project and shows its key', () => {
+    const store = newStore();
+    const item = store.create({ kind: 'approval', title: 'Tell chats?', project: 'askito', key: 'first-run-broadcast' });
+    store.answer(item.id, { decision: 'approved' });
+    const picked = store.pickup({ project: 'somewhere-else' });
+    assert.deepEqual(picked.map((i) => i.id), [item.id]);
+    assert.match(formatItem(picked[0]), /key: first-run-broadcast/);
   });
 
   test('items survive a restart', () => {
@@ -458,6 +468,20 @@ describe('setup', () => {
     const { stdout } = await cli('setup', '--tools', 'zed');
     assert.equal(fs.readFileSync(path.join(fakeHome, '.config', 'zed', 'settings.json'), 'utf8'), original);
     assert.match(stdout, /SKIPPED/);
+    await cli('uninstall', '--purge');
+  });
+
+  test('a new install posts one first question and a reinstall does not', async () => {
+    const { fakeHome, cli } = sandbox();
+    fs.mkdirSync(path.join(fakeHome, '.claude'));
+    const first = await cli('setup');
+    assert.match(first.stdout, /First question/);
+    assert.match(fs.readFileSync(path.join(fakeHome, '.claude', 'CLAUDE.md'), 'utf8'), /first-run-broadcast/);
+    await cli('setup');
+    const items = JSON.parse((await cli('list', '--json')).stdout);
+    assert.equal(items.length, 1);
+    assert.equal(items[0].kind, 'approval');
+    assert.equal(items[0].key, 'first-run-broadcast');
     await cli('uninstall', '--purge');
   });
 

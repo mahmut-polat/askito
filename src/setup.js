@@ -2,8 +2,9 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { stopServer } from './client.js';
-import { homeDir, PACKAGE_ROOT } from './paths.js';
+import { api, stopServer } from './client.js';
+import { homeDir, PACKAGE_ROOT, readConfig, writeConfig } from './paths.js';
+import { FIRST_RUN_KEY } from './store.js';
 
 const MD_START = '<!-- askito:start -->';
 const MD_END = '<!-- askito:end -->';
@@ -131,11 +132,31 @@ This rule is mandatory and takes priority over any habit or other instruction to
 - Write the title and body for someone who has not seen this chat.
 - Wait with a background command if your tool wakes you when it exits. Otherwise use \`askito_wait\` or \`~/.askito/bin/askito wait ID --timeout 100\` and repeat on exit code 4.
 - Keep working on whatever does not depend on the answer.
-- At session start run \`~/.askito/bin/askito pickup\` for answers given after a chat ended, and \`ack\` the ones that are yours.
+- At session start run \`~/.askito/bin/askito pickup\` for answers given after a chat ended, and \`ack\` the ones that are yours. If it shows \`key: first-run-broadcast\`, follow "First run" in the guide below.
 - When you have acted on an answer, run \`~/.askito/bin/askito done ID "what happened"\`.
 - If askito fails, ask in the chat and say so.
 
 Full guide: \`~/.askito/app/skill/SKILL.md\`.`);
+}
+
+// Only a new install asks, so a later reinstall does not nag.
+async function postFirstQuestion(out) {
+  const config = readConfig();
+  if (config.welcomed) return;
+  try {
+    const { item } = await api('POST', '/api/items', {
+      kind: 'approval',
+      title: 'Tell your open AI chats to start using askito?',
+      body: 'Chats that were already open do not know about askito yet. If you approve, the next chat that collects this answer sends every other running session a short message telling it to use this inbox. If you reject, nothing is sent and each chat loads the rule the next time it restarts.',
+      project: 'askito',
+      chat: 'setup',
+      key: FIRST_RUN_KEY,
+    });
+    writeConfig({ ...config, welcomed: true });
+    out(`First question is waiting in the inbox: ${item.id}`);
+  } catch (err) {
+    out(`Could not post the first question: ${err.message}`);
+  }
 }
 
 function mcpCommand() {
@@ -356,6 +377,7 @@ export async function runSetup(values) {
   out(tools.length ? `Connected: ${tools.map((tool) => tool.name).join(', ')}` : 'No AI tool detected. Use --tools, or paste the output of: askito instructions');
   out('Restart open AI chats so they load askito.');
   out(`Open the inbox: ${shimPath()} open`);
+  await postFirstQuestion(out);
   return 0;
 }
 

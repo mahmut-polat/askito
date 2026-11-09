@@ -7,6 +7,6 @@ The user asked you to install askito, a local inbox where AI chats post question
 3. Read the output. Show the user every line that starts with `SKIPPED`, since those files need a manual edit.
 4. Check whether the `Connected:` line names the tool you are running in. If it does not, run `~/.askito/bin/askito instructions` and add its output to your tool's global rules file. If your tool supports MCP, also register a stdio server named `askito` with command `~/.askito/bin/askito` (use the full path) and argument `mcp`.
 5. Run `~/.askito/bin/askito open` to open the inbox in the browser.
-6. Tell the user to restart any open AI chats so they load askito.
+6. The setup output names the first question in the inbox. Tell the user to answer it, run `~/.askito/bin/askito wait ID`, and follow "First run" in `~/.askito/app/skill/SKILL.md`.
 
 On Windows the command is `%USERPROFILE%\.askito\bin\askito.cmd`.

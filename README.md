@@ -34,6 +34,8 @@ In Claude Code, typing `/askito` opens it too. The page lives at `http://askito.
 
 Add `--dry-run` to see which files setup would touch, or `--tools claude,cursor` to choose. Setup copies each config file to `~/.askito/backups` before its first change, and it leaves alone any JSON file it cannot fully parse (it prints what to add by hand).
 
+The first item in a new inbox asks whether to tell the chats you already have open. Approve it and the next chat that collects the answer messages every other running session, in tools that can reach other sessions such as Claude Code. Elsewhere, restart those chats.
+
 There is nothing else to configure. Setup installs the skill that teaches agents how to post, and adds a rule telling every connected agent to send all questions to the inbox and stay away from chat question tools. To go back to asking in chat, delete the block between `<!-- askito:start -->` and `<!-- askito:end -->` in that tool's rules file.
 
 A repository shows under its folder name. To rename it in the inbox, run `askito alias "Friendly name" /path/to/repo`.
