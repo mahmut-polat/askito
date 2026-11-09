@@ -98,6 +98,36 @@ test('items set aside stay out of the panel', async ($, on) => {
   await ui.unmount()
 })
 
+const OTHER = { ...ITEM, id: 'def456', title: 'Pick a colour', project: 'storefront', createdAt: '2026-11-09T11:00:00.000Z' }
+
+test('every row shows its project as a badge', async ($, on) => {
+  await start($, on, { items: [ITEM, OTHER] })
+  const ui = await $.ui.mount(PANE)
+  expect((await ui.find({ type: 'Text', text: 'billing' }))?.text).toBe('billing')
+  expect((await ui.find({ type: 'Text', text: 'storefront' }))?.text).toBe('storefront')
+  await ui.unmount()
+})
+
+test('a project filter narrows the list', async ($, on) => {
+  await start($, on, { items: [ITEM, OTHER] })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'project-storefront' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect(await ui.find({ type: 'Button', text: /Run the migration/ })).toBeUndefined()
+  expect((await ui.find({ type: 'Button', text: /Pick a colour/ }))?.text).toBe('Pick a colour')
+  await ui.press({ key: 'project-all' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect((await ui.find({ type: 'Button', text: /Run the migration/ }))?.text).toBe('Run the migration?')
+  await ui.unmount()
+})
+
+test('with one project there is no filter row', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ key: 'project-all' })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('without askito the pane says so', async ($, on) => {
   await start($, on, { installed: false })
   const ui = await $.ui.mount(PANE)

@@ -22,6 +22,7 @@ declare module 'claude-code' {
     'askito-panel': {
       items: Shaped<InboxItem[]>
       selected: Shaped<string | null>
+      filter: Shaped<string | null>
       catalog: Shaped<Catalog>
       status: Shaped<'loading' | 'ready' | 'offline'>
       error: Shaped<boolean>

@@ -50,7 +50,7 @@ Chats post three kinds of item:
 | Approval | Approve, Reject, or send a comment |
 | Your task | I did it, I can't do this, or send a comment |
 
-Any item can be removed from the list, which also tells a waiting chat to drop the subject. Later takes an item off your Waiting list without closing it: the chat keeps waiting and the Later tab holds the item until you bring it back. Items move through five tabs: Waiting, Later, With chats, Done and Removed. You can reopen anything. The sidebar splits everything by project and counts what is waiting in each.
+Any item can be removed from the list, which also tells a waiting chat to drop the subject. Later takes an item off your Waiting list without closing it: the chat keeps waiting and the Later tab holds the item until you bring it back. Items move through five tabs: Waiting, Later, With chats, Done and Removed. You can reopen anything. The sidebar splits everything by project and counts what is waiting in each, and every row carries its project as a colored badge.
 
 Rows are numbered, and each has its own icon and color for its kind, so a question and a job for you look different at a glance. Each open item says whether its chat is waiting right now or will collect your answer the next time it runs. New items raise a desktop notification and update the tab title. The page comes in English and Turkish, in light and dark. To add a language, drop a file in `web/i18n` and add one line each in `web/app.js` and `src/server.js`.
 
@@ -70,7 +70,7 @@ If the chat has already ended, your answer stays in the inbox. The next session 
 
 ## Side panels
 
-In Claude Code, setup installs a panel beside the chat with the open items and their answer controls. It appears in sessions started after setup, and `/askito-panel` reopens it. On Windows setup skips this step, so run `claude plugin marketplace add %USERPROFILE%\.askito\app` and then `claude plugin install askito-panel@askito`.
+In Claude Code, setup installs a panel beside the chat with the open items, a filter for each project and the answer controls. It appears in sessions started after setup, and `/askito-panel` reopens it. On Windows setup skips this step, so run `claude plugin marketplace add %USERPROFILE%\.askito\app` and then `claude plugin install askito-panel@askito`.
 
 For claude.ai, chatgpt.com or any other tab, there is a Chrome side panel. Chrome does not let a program install an extension, so this one takes a manual step: open `chrome://extensions`, turn on Developer mode, choose Load unpacked, and pick `~/.askito/app/extensions/chrome`. Run `askito open` once with Chrome as your browser so the panel is signed in, then click the askito icon in the toolbar.
 

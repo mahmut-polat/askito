@@ -371,6 +371,38 @@ kbd {
   overflow-wrap: anywhere;
 }
 
+/* Translucent, so each project keeps its color on both themes. */
+.badge {
+  padding: 0 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.badge-0 {
+  background: #4f8fe838;
+}
+
+.badge-1 {
+  background: #2fa36b38;
+}
+
+.badge-2 {
+  background: #c9922e38;
+}
+
+.badge-3 {
+  background: #a678e238;
+}
+
+.badge-4 {
+  background: #e0607038;
+}
+
+.badge-5 {
+  background: #2aa5b838;
+}
+
 .tag {
   font-weight: 600;
   color: var(--kind);

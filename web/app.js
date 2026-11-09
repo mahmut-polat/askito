@@ -164,6 +164,10 @@ const draftFor = (id) => {
   return drafts.get(id);
 };
 
+function projectHue(name) {
+  return Array.from(name).reduce((total, char) => total + char.codePointAt(0), 0) % 6;
+}
+
 const projectLabel = (name) => (name === 'unsorted' ? t('unsorted') : name);
 
 function inTab(item, tab) {
@@ -450,9 +454,9 @@ function renderRow(item, index) {
   const meta = h(
     'span',
     { class: 'meta' },
+    h('span', { class: `badge badge-${projectHue(item.project)}` }, projectLabel(item.project)),
     h('span', { class: 'tag' }, t(KIND_LABEL[item.kind])),
     item.urgent ? h('span', { class: 'tag urgent' }, t('urgent')) : null,
-    !state.project ? h('span', {}, projectLabel(item.project)) : null,
     item.chat ? h('span', {}, item.chat) : null,
     item.agent ? h('span', {}, item.agent) : null,
     h('span', {}, relative(item.createdAt)),

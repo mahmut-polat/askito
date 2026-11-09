@@ -25,6 +25,14 @@ const KIND_ICON = {
   },
 } as const
 
+// Translucent, so one project keeps its color on the light and the dark theme.
+const BADGE_COLORS = ['#4f8fe838', '#2fa36b38', '#c9922e38', '#a678e238', '#e0607038', '#2aa5b838']
+
+function badgeColor(project: string) {
+  const sum = Array.from(project).reduce((total, char) => total + (char.codePointAt(0) ?? 0), 0)
+  return BADGE_COLORS[sum % BADGE_COLORS.length]
+}
+
 function kindSvg(kind: InboxItem['kind']) {
   const { color, shapes } = KIND_ICON[kind]
   return `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="${color}" fill-opacity="0.18"/><g transform="translate(6 6) scale(0.8333)" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shapes}</g></svg>`
@@ -32,9 +40,13 @@ function kindSvg(kind: InboxItem['kind']) {
 
 const items = atom({ plugin: 'askito-panel', key: 'items' } as const, [], { shape: 'items-1' })
 const selected = atom({ plugin: 'askito-panel', key: 'selected' } as const, null, { shape: 'selected-1' })
+const filter = atom({ plugin: 'askito-panel', key: 'filter' } as const, null, { shape: 'filter-1' })
 const catalog = atom({ plugin: 'askito-panel', key: 'catalog' } as const, {}, { shape: 'catalog-1' })
 const status = atom({ plugin: 'askito-panel', key: 'status' } as const, 'loading', { shape: 'status-1' })
 const error = atom({ plugin: 'askito-panel', key: 'error' } as const, false, { shape: 'error-1' })
+
+// `selected` holds this value when the person has folded every row away.
+const COLLAPSED = 'none'
 
 // A draft is typed by one person in one pane, and redrawing must not touch it.
 const drafts: Record<string, string> = {}
@@ -98,7 +110,7 @@ async function refresh($: EngineInterface) {
     const current = await read($, items)
     if (JSON.stringify(current) !== JSON.stringify(next)) await update($, items, () => next)
     const picked = await read($, selected)
-    if (!next.some(item => item.id === picked)) await update($, selected, () => next[0]?.id ?? null)
+    if (picked !== COLLAPSED && !next.some(item => item.id === picked)) await update($, selected, () => next[0]?.id ?? null)
     if ((await read($, status)) !== 'ready') await update($, status, () => 'ready')
   } catch {
     if ((await read($, status)) !== 'offline') await update($, status, () => 'offline')
@@ -136,6 +148,7 @@ export const register: Register = on => {
     const { Box, Text, Button, Input, Markdown, Link, Svg } = $.ui.resolve(e)
     const list = await read($, items)
     const picked = await read($, selected)
+    const chosen = await read($, filter)
     const words = await read($, catalog)
     const state = await read($, status)
     const failed = await read($, error)
@@ -160,6 +173,17 @@ export const register: Register = on => {
         </Box>
       )
     }
+
+    const projects = [...new Set(list.map(item => item.project))].sort((a, b) => a.localeCompare(b))
+    const active = chosen && projects.includes(chosen) ? chosen : null
+    const shown = active ? list.filter(item => item.project === active) : list
+    const openId = picked === COLLAPSED ? null : shown.some(item => item.id === picked) ? picked : (shown[0]?.id ?? null)
+    const projectName = (name: string) => (name === 'unsorted' ? t('unsorted') : name)
+    const chip = (key: string, label: string, count: number, value: string | null) => (
+      <Button key={`project-${key}`} variant={active === value ? 'primary' : 'secondary'} onPress={() => void update($, filter, () => value)}>
+        {label} <Text dimColor>{count}</Text>
+      </Button>
+    )
 
     const detail = (item: InboxItem) => {
       const comment = () => drafts[item.id]?.trim() || undefined
@@ -230,7 +254,7 @@ export const register: Register = on => {
     }
 
     const row = (item: InboxItem, index: number) => {
-      const isOpen = item.id === picked
+      const isOpen = item.id === openId
       return (
         <Box flexDirection="row" gap="sm" alignItems="flex-start">
           <Box width={3} flexShrink={0} paddingTop="xs">
@@ -240,10 +264,15 @@ export const register: Register = on => {
           </Box>
           <Svg source={kindSvg(item.kind)} alt={t(KIND_LABEL[item.kind])} width={32} height={32} />
           <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-            <Button key={`row-${item.id}`} plain onPress={() => void update($, selected, () => (isOpen ? null : item.id))}>
+            <Button key={`row-${item.id}`} plain onPress={() => void update($, selected, () => (isOpen ? COLLAPSED : item.id))}>
               <Text weight="semibold">{item.title}</Text>
             </Button>
-            <Box flexDirection="row" flexWrap="wrap" columnGap="sm">
+            <Box flexDirection="row" flexWrap="wrap" columnGap="sm" alignItems="center">
+              <Box backgroundColor={badgeColor(item.project)} paddingX={1}>
+                <Text size="caption" weight="medium">
+                  {projectName(item.project)}
+                </Text>
+              </Box>
               <Text size="caption" weight="medium">
                 {t(KIND_LABEL[item.kind])}
               </Text>
@@ -252,9 +281,11 @@ export const register: Register = on => {
                   {t('urgent')}
                 </Text>
               ) : null}
-              <Text size="caption" dimColor>
-                {[item.project, item.chat].filter(Boolean).join(' · ')}
-              </Text>
+              {item.chat ? (
+                <Text size="caption" dimColor>
+                  {item.chat}
+                </Text>
+              ) : null}
             </Box>
             {isOpen ? detail(item) : null}
           </Box>
@@ -267,13 +298,19 @@ export const register: Register = on => {
         <Box flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap="sm">
           <Box flexDirection="row" alignItems="center" gap="sm">
             <Text size="title" weight="bold" tabular>
-              {list.length}
+              {shown.length}
             </Text>
             <Text size="heading">{t('headWaiting')}</Text>
           </Box>
           {inbox}
         </Box>
-        {list.map(row)}
+        {projects.length > 1 ? (
+          <Box flexDirection="row" flexWrap="wrap" gap="xs">
+            {chip('all', t('allProjects'), list.length, null)}
+            {projects.map(name => chip(name, projectName(name), list.filter(item => item.project === name).length, name))}
+          </Box>
+        ) : null}
+        {shown.map(row)}
       </Box>
     )
   })
