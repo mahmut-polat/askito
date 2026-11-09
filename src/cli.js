@@ -17,7 +17,7 @@ Set up
   askbell setup [--tools claude,codex,...] [--dry-run]
   askbell uninstall [--purge]
   askbell instructions             Print the rules to paste into any other AI tool
-  askbell open                     Open the inbox in your browser
+  askbell open [--url]             Open the inbox in your browser, or print its link
   askbell status | start | stop
   askbell alias "Name" [path]      Show a repository under a friendlier project name
 
@@ -57,6 +57,7 @@ const OPTIONS = {
   status: { type: 'string' },
   tools: { type: 'string' },
   'dry-run': { type: 'boolean' },
+  url: { type: 'boolean' },
   purge: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean', short: 'v' },
@@ -154,8 +155,13 @@ export async function main(argv) {
     case 'open': {
       await ensureServer();
       const url = inboxUrl();
-      openBrowser(url);
-      print(url);
+      // The link holds the browser secret, so it stays out of agent transcripts by default.
+      if (values.url) {
+        print(url);
+      } else {
+        openBrowser(url);
+        print('inbox opened in your browser');
+      }
       return 0;
     }
     case 'alias': {

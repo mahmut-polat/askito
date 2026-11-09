@@ -24,7 +24,7 @@ Setup needs Node 20 or newer and has no other dependencies. It copies askbell to
 ~/.askbell/bin/askbell open
 ```
 
-Bookmark the page if you like. The server starts by itself the first time a chat posts, or when you run `askbell open`.
+In Claude Code, typing `/askbell` opens it too. Bookmark the page if you like. The server starts by itself the first time a chat posts, or when you run `askbell open`.
 
 Add `--dry-run` to see which files setup would touch, or `--tools claude,cursor` to choose. Setup copies each config file to `~/.askbell/backups` before its first change, and it leaves alone any JSON file it cannot fully parse (it prints what to add by hand).
 

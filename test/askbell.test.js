@@ -332,6 +332,20 @@ describe('end to end', () => {
     await assert.rejects(cli('wait', stdout.trim(), '--timeout', '1'), (err) => err.code === 4);
   });
 
+  test('open keeps the browser secret out of its output unless --url is given', async () => {
+    const opened = await cli('open');
+    const secret = fs.readFileSync(path.join(home, 'ui.token'), 'utf8').trim();
+    assert.ok(!opened.stdout.includes(secret));
+    assert.match(opened.stdout, /opened/);
+    assert.ok((await cli('open', '--url')).stdout.includes(secret));
+  });
+
+  test('the skill tells the agent to open the inbox for /askbell', () => {
+    const skill = fs.readFileSync(path.join(ROOT, 'skill', 'SKILL.md'), 'utf8');
+    assert.match(skill, /types `\/askbell`/);
+    assert.match(skill, /askbell open/);
+  });
+
   test('an agent cannot use the command line to approve', async () => {
     const help = await cli('--help');
     assert.doesNotMatch(help.stdout, /askbell answer/);

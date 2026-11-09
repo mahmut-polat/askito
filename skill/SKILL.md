@@ -1,6 +1,6 @@
 ---
 name: askbell
-description: Mandatory channel for questions, approvals and human-only tasks. Send them to the user's askbell inbox and never ask in chat. Use whenever you need a decision, a go-ahead, missing information, or something only the user can do (log in, pay, sign, click, press a physical button).
+description: Mandatory channel for questions, approvals and human-only tasks. Send them to the user's askbell inbox and never ask in chat. Use whenever you need a decision, a go-ahead, missing information, or something only the user can do (log in, pay, sign, click, press a physical button). Also opens the inbox page when the user types /askbell.
 ---
 
 # askbell
@@ -8,6 +8,10 @@ description: Mandatory channel for questions, approvals and human-only tasks. Se
 The user runs many AI chats at once and answers all of them from one local inbox page. Posting there is mandatory: do not ask questions in the chat, and do not use chat question tools such as AskUserQuestion or end-of-turn buttons.
 
 The command on this machine is `~/.askbell/bin/askbell`. MCP clients also have the same actions as `askbell_ask`, `askbell_wait`, `askbell_pickup`, `askbell_ack`, `askbell_reply` and `askbell_done`.
+
+## When the user types `/askbell`
+
+If the user runs this skill directly with no other task, or asks to open the inbox, run `~/.askbell/bin/askbell open`, say in one line that the inbox is open, and stop.
 
 ## Post
 
