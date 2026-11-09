@@ -199,6 +199,8 @@ export class Store extends EventEmitter {
     item.status = 'open';
     item.answer = null;
     item.deliveredAt = null;
+    // New information is worth seeing, even on something set aside.
+    item.laterAt = null;
     item.messages.push({ from: 'agent', text: body, at: new Date().toISOString() });
     this.changed('reply', item);
     return item;
@@ -242,7 +244,17 @@ export class Store extends EventEmitter {
     item.status = 'open';
     item.answer = null;
     item.deliveredAt = null;
+    item.laterAt = null;
     this.changed('reopened', item);
+    return item;
+  }
+
+  // Later only moves an open item out of the way. The asking chat keeps waiting.
+  later(id, value) {
+    const item = this.get(id);
+    if (item.status !== 'open') throw new HttpError(409, 'not_open', 'only waiting items can be set aside');
+    item.laterAt = value ? new Date().toISOString() : null;
+    this.changed('later', item);
     return item;
   }
 

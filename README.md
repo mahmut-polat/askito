@@ -50,7 +50,7 @@ Chats post three kinds of item:
 | Approval | Approve, Reject, or send a comment |
 | Your task | I did it, I can't do this, or send a comment |
 
-Any item can be removed from the list, which also tells a waiting chat to drop the subject. Items move through four tabs: Waiting, With chats, Done and Removed. You can reopen anything. The sidebar splits everything by project and counts what is waiting in each.
+Any item can be removed from the list, which also tells a waiting chat to drop the subject. Later takes an item off your Waiting list without closing it: the chat keeps waiting and the Later tab holds the item until you bring it back. Items move through five tabs: Waiting, Later, With chats, Done and Removed. You can reopen anything. The sidebar splits everything by project and counts what is waiting in each.
 
 Rows are numbered, and each has its own icon and color for its kind, so a question and a job for you look different at a glance. Each open item says whether its chat is waiting right now or will collect your answer the next time it runs. New items raise a desktop notification and update the tab title. The page comes in English and Turkish, in light and dark. To add a language, drop a file in `web/i18n` and add one line each in `web/app.js` and `src/server.js`.
 

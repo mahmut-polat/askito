@@ -4,6 +4,7 @@
 const LANGUAGES = { en: 'English', tr: 'Türkçe' };
 const TABS = [
   { id: 'waiting', status: 'open', label: 'tabWaiting', head: 'headWaiting', empty: 'emptyWaiting' },
+  { id: 'later', status: 'open', later: true, label: 'tabLater', head: 'headLater', empty: 'emptyLater' },
   { id: 'agents', status: 'answered', label: 'tabAgents', head: 'headAgents', empty: 'emptyAgents' },
   { id: 'done', status: 'done', label: 'tabDone', head: 'headDone', empty: 'emptyDone' },
   { id: 'removed', status: 'dismissed', label: 'tabRemoved', head: 'headRemoved', empty: 'emptyRemoved' },
@@ -165,15 +166,20 @@ const draftFor = (id) => {
 
 const projectLabel = (name) => (name === 'unsorted' ? t('unsorted') : name);
 
+function inTab(item, tab) {
+  return item.status === tab.status && (tab.status !== 'open' || Boolean(item.laterAt) === Boolean(tab.later));
+}
+
 function currentTab() {
   return TABS.find((tab) => tab.id === state.tab);
 }
 
 function visibleItems() {
-  const status = currentTab().status;
+  const tab = currentTab();
+  const { status } = tab;
   const query = state.query.trim().toLocaleLowerCase(language);
   const items = state.items.filter((item) => {
-    if (item.status !== status) return false;
+    if (!inTab(item, tab)) return false;
     if (state.project && item.project !== state.project) return false;
     if (!query) return true;
     return [item.title, item.body, item.chat, item.project].some((field) => field?.toLocaleLowerCase(language).includes(query));
@@ -338,7 +344,10 @@ function openControls(item, row) {
   const draft = draftFor(item.id);
   const hasComment = draft.comment.trim().length > 0;
   const comment = () => draftFor(item.id).comment.trim();
-  const removeButton = button(item, { label: t('remove'), kind: 'quiet', action: 'dismiss', body: {} });
+  const setAside = item.laterAt
+    ? button(item, { label: t('backToWaiting'), action: 'later', body: { later: false } })
+    : button(item, { label: t('later'), action: 'later', body: { later: true } });
+  const removeButton = [setAside, button(item, { label: t('remove'), kind: 'quiet', action: 'dismiss', body: {} })];
   const commentButton = button(item, { label: t('commentOnly'), action: 'answer', body: () => ({ decision: 'comment', comment: comment() }), disabled: !hasComment, needsComment: true });
 
   if (item.kind === 'approval') {
@@ -482,7 +491,7 @@ function renderSide() {
   const counts = new Map();
   for (const item of state.items) {
     if (!counts.has(item.project)) counts.set(item.project, 0);
-    if (item.status === 'open') counts.set(item.project, counts.get(item.project) + 1);
+    if (item.status === 'open' && !item.laterAt) counts.set(item.project, counts.get(item.project) + 1);
   }
   const total = [...counts.values()].reduce((sum, n) => sum + n, 0);
   document.title = total ? `(${total}) Ask·ito` : 'Ask·ito';
@@ -571,7 +580,7 @@ function renderMain() {
   const tab = currentTab();
   const inProject = state.items.filter((item) => !state.project || item.project === state.project);
   const items = visibleItems();
-  const count = inProject.filter((item) => item.status === tab.status).length;
+  const count = inProject.filter((item) => inTab(item, tab)).length;
   let content;
   if (items.length) {
     content = [h('ol', { class: 'list' }, items.map(renderRow)), h('p', { class: 'list-end' }, t('listEnd'))];

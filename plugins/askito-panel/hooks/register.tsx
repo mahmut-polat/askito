@@ -94,7 +94,7 @@ async function refresh($: EngineInterface) {
     await loadCatalog($, link)
     const res = await request($, link, '/api/items?status=open')
     if (!res.ok) throw new Error(String(res.status))
-    const next = order((JSON.parse(res.text) as { items: InboxItem[] }).items)
+    const next = order((JSON.parse(res.text) as { items: InboxItem[] }).items.filter(item => !item.laterAt))
     const current = await read($, items)
     if (JSON.stringify(current) !== JSON.stringify(next)) await update($, items, () => next)
     const picked = await read($, selected)
@@ -105,7 +105,7 @@ async function refresh($: EngineInterface) {
   }
 }
 
-async function act($: EngineInterface, id: string, action: 'answer' | 'dismiss', body: object) {
+async function act($: EngineInterface, id: string, action: 'answer' | 'dismiss' | 'later', body: object) {
   const link = await connect($)
   const res = link ? await request($, link, `/api/items/${id}/${action}`, body).catch(() => null) : null
   // A 409 means the page answered first; the refresh below shows that.
@@ -217,6 +217,7 @@ export const register: Register = on => {
           <Box flexDirection="row" flexWrap="wrap" gap="sm" alignItems="center">
             {actions}
             <Box flexGrow={1} />
+            <Button key={`later-${item.id}`} variant="secondary" label={t('later')} onPress={() => void act($, item.id, 'later', { later: true })} />
             {remove}
           </Box>
           {failed ? (

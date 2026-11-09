@@ -111,6 +111,24 @@ describe('store', () => {
     assert.match(formatItem(picked[0]), /key: first-run-broadcast/);
   });
 
+  test('later sets an open item aside without closing it, and a follow-up brings it back', () => {
+    const store = newStore();
+    const item = store.create({ title: 'Not today' });
+    const aside = store.later(item.id, true);
+    assert.equal(aside.status, 'open');
+    assert.ok(aside.laterAt);
+    assert.equal(store.later(item.id, false).laterAt, null);
+    store.later(item.id, true);
+    assert.equal(store.reply(item.id, { text: 'Something changed' }).laterAt, null);
+  });
+
+  test('a closed item cannot be set aside', () => {
+    const store = newStore();
+    const item = store.create({ kind: 'approval', title: 'Go?' });
+    store.answer(item.id, { decision: 'approved' });
+    assert.throws(() => store.later(item.id, true), /only waiting items/);
+  });
+
   test('items survive a restart', () => {
     const file = path.join(tempDir(), 'items.json');
     const first = new Store(file);
@@ -204,6 +222,16 @@ describe('server', () => {
     const res = await call('POST', `/api/items/${item.id}/answer`, { headers: agent, body: { decision: 'approved' } });
     assert.equal(res.status, 403);
     assert.equal(store.get(item.id).status, 'open');
+  });
+
+  test('only the browser can set an item aside, and a waiting chat stays waiting', async () => {
+    const item = await create({ title: 'Set me aside' });
+    assert.equal((await call('POST', `/api/items/${item.id}/later`, { headers: agent, body: { later: true } })).status, 403);
+    const res = await call('POST', `/api/items/${item.id}/later`, { headers: human(), body: { later: true } });
+    assert.equal(res.status, 200);
+    assert.ok(res.json().item.laterAt);
+    const waited = (await call('GET', `/api/wait?ids=${item.id}&timeout=0`, { headers: agent })).json();
+    assert.deepEqual(waited.pending, [item.id]);
   });
 
   test('a cross-site browser post is refused even with the cookie', async () => {

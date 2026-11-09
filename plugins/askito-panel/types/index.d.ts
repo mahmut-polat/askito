@@ -12,6 +12,7 @@ export type InboxItem = {
   chat: string | null
   agentWaiting: boolean
   createdAt: string
+  laterAt?: string | null
 }
 
 export type Catalog = Record<string, string>

@@ -217,6 +217,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       answer: ['human', () => store.answer(id, body)],
       dismiss: ['human', () => store.dismiss(id, body.note)],
       reopen: ['human', () => store.reopen(id)],
+      later: ['human', () => store.later(id, body.later !== false)],
       close: ['human', () => store.close(id, 'human', body.note)],
       ack: ['agent', () => store.ack(id)],
       reply: ['agent', () => store.reply(id, body)],

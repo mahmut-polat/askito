@@ -32,9 +32,9 @@ const ITEM = {
 
 type Fetch = { url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }
 
-async function start($: any, on: any, options: { installed?: boolean } = {}) {
+async function start($: any, on: any, options: { installed?: boolean; items?: object[] } = {}) {
   const sent: Fetch[] = []
-  let open = [ITEM]
+  let open: object[] = options.items ?? [ITEM]
   on('command.register', () => ({ value: { command: 'askito-panel' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
@@ -78,6 +78,23 @@ test('approving posts the answer as the browser would', async ($, on) => {
   expect(sent[0].init?.headers?.Cookie).toBe('askito_ui=secret')
   expect(sent[0].init?.headers?.Origin).toBe('http://127.0.0.1:4517')
   expect(JSON.parse(sent[0].init?.body ?? '{}').decision).toBe('approved')
+  await ui.unmount()
+})
+
+test('Later sets the item aside', async ($, on) => {
+  const sent = await start($, on)
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'later-abc123' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect(sent[0].url).toBe('http://127.0.0.1:4517/api/items/abc123/later')
+  expect(JSON.parse(sent[0].init?.body ?? '{}').later).toBe(true)
+  await ui.unmount()
+})
+
+test('items set aside stay out of the panel', async ($, on) => {
+  await start($, on, { items: [{ ...ITEM, laterAt: '2026-11-09T11:00:00.000Z' }] })
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Button', text: /Run the migration/ })).toBeUndefined()
   await ui.unmount()
 })
 
