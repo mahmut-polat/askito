@@ -62,5 +62,8 @@
   "errorGeneric": "Gönderilemedi. askito'nun çalıştığını kontrol edip tekrar dene.",
   "errorSession": "Bu sayfanın oturumu düştü. Terminalde askito open komutunu çalıştır.",
   "announceSent": "Gönderildi",
+  "openInbox": "Gelen kutusunu aç",
+  "panelOffline": "askito çalışmıyor. Terminalde askito open komutunu çalıştır.",
+  "panelMulti": "Bu soruda birden fazla seçim var. Gelen kutusundan cevapla.",
   "unsorted": "Diğer"
 }

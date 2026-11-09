@@ -1,0 +1,7 @@
+{
+  "name": "askito-panel",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "Shows the askito inbox in a panel beside the chat, with its answer controls.",
+  "types": "./types/index.d.ts"
+}

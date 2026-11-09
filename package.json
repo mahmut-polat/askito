@@ -12,6 +12,8 @@
     "src",
     "web",
     "skill",
+    "plugins",
+    ".claude-plugin",
     "INSTALL.md",
     "LICENSE",
     "README.md"

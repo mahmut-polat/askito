@@ -10,7 +10,7 @@ const MD_START = '<!-- askito:start -->';
 const MD_END = '<!-- askito:end -->';
 const TOML_START = '# askito:start';
 const TOML_END = '# askito:end';
-const APP_PARTS = ['bin', 'src', 'web', 'skill', 'package.json'];
+const APP_PARTS = ['bin', 'src', 'web', 'skill', 'plugins', '.claude-plugin', 'package.json'];
 const isWindows = process.platform === 'win32';
 
 const home = () => process.env.HOME || process.env.USERPROFILE || os.homedir();
@@ -45,6 +45,7 @@ function adapters() {
       skills: [inHome('.claude', 'skills')],
       rules: inHome('.claude', 'CLAUDE.md'),
       settings: inHome('.claude', 'settings.json'),
+      panel: true,
     },
     {
       id: 'codex',
@@ -138,6 +139,33 @@ This rule is mandatory and takes priority over any habit or other instruction to
 - If askito fails, ask in the chat and say so.
 
 Full guide: \`~/.askito/app/skill/SKILL.md\`.`);
+}
+
+function uninstallClaudePanel(tool, log) {
+  if (!useToolCli(tool)) return;
+  for (const args of [['plugin', 'uninstall', 'askito-panel@askito'], ['plugin', 'marketplace', 'remove', 'askito']]) {
+    try {
+      claudeCli(args);
+    } catch {
+      // It was never installed, or is already gone.
+    }
+  }
+  log.push('removed the Claude panel');
+}
+
+function installClaudePanel(tool, log) {
+  if (!useToolCli(tool)) {
+    log.push('Claude panel not installed: the claude command was not found. See the README.');
+    return;
+  }
+  uninstallClaudePanel(tool, []);
+  try {
+    claudeCli(['plugin', 'marketplace', 'add', appDir()]);
+    claudeCli(['plugin', 'install', 'askito-panel@askito']);
+    log.push('Claude panel installed');
+  } catch (err) {
+    log.push(`Claude panel not installed: ${err.message}`);
+  }
 }
 
 // A rule in a text file can be forgotten after a long chat. These hooks hold
@@ -311,7 +339,7 @@ function tomlBlock() {
 }
 
 function claudeCli(args) {
-  execFileSync('claude', args, { stdio: 'ignore', timeout: 20000 });
+  execFileSync('claude', args, { stdio: 'ignore', timeout: 60000 });
 }
 
 // Windows installs of the CLI are often .cmd files, which execFile cannot run
@@ -428,6 +456,7 @@ export async function runSetup(values) {
     (tool.skills ?? []).forEach((dir) => installSkill(dir, log));
     if (tool.rules) writeBlock(tool.rules, MD_START, MD_END, rulesBlock(), log);
     if (tool.settings) setClaudeHooks(tool.settings, log);
+    if (tool.panel) installClaudePanel(tool, log);
   }
   log.forEach((line) => out(line));
 
@@ -449,6 +478,7 @@ export async function runUninstall(values) {
     for (const dir of tool.skills ?? []) fs.rmSync(path.join(dir, 'askito'), { recursive: true, force: true });
     if (tool.rules) removeBlock(tool.rules, MD_START, MD_END, log);
     if (tool.settings) removeClaudeHooks(tool.settings, log);
+    if (tool.panel) uninstallClaudePanel(tool, log);
   }
   fs.rmSync(path.join(inHome('.agents', 'skills'), 'askito'), { recursive: true, force: true });
   fs.rmSync(appDir(), { recursive: true, force: true });

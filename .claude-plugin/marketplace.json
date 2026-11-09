@@ -1,0 +1,11 @@
+{
+  "name": "askito",
+  "owner": { "name": "Mahmut Polat" },
+  "plugins": [
+    {
+      "name": "askito-panel",
+      "source": "./plugins/askito-panel",
+      "description": "Shows the askito inbox in a panel beside the chat, with its answer controls."
+    }
+  ]
+}
