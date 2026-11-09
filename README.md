@@ -1,3 +1,5 @@
+<img src="web/icon.svg" width="72" alt="" />
+
 # askbell
 
 One local inbox for every question your AI coding chats need to ask you.
@@ -27,6 +29,10 @@ Setup needs Node 20 or newer and has no other dependencies. It copies askbell to
 In Claude Code, typing `/askbell` opens it too. Bookmark the page if you like. The server starts by itself the first time a chat posts, or when you run `askbell open`.
 
 Add `--dry-run` to see which files setup would touch, or `--tools claude,cursor` to choose. Setup copies each config file to `~/.askbell/backups` before its first change, and it leaves alone any JSON file it cannot fully parse (it prints what to add by hand).
+
+There is nothing else to configure. Setup installs the skill that teaches agents how to post, and adds a rule telling every connected agent to send all questions to the inbox and stay away from chat question tools. To go back to asking in chat, delete the block between `<!-- askbell:start -->` and `<!-- askbell:end -->` in that tool's rules file.
+
+A repository shows under its folder name. To rename it in the inbox, run `askbell alias "Friendly name" /path/to/repo`.
 
 ## What you can do on the page
 

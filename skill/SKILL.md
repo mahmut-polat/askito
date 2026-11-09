@@ -64,6 +64,12 @@ Read `comment` even when there is a decision. It can change what the decision me
 
 Run `~/.askbell/bin/askbell pickup`. It lists answers no chat has collected for this project, which happens when the user answers after a chat has ended. For each one that belongs to your work, act on it and run `~/.askbell/bin/askbell ack ID`. Leave the others alone, since another chat may be waiting for them.
 
+## Setup
+
+If `~/.askbell/bin/askbell` does not exist, run `npx -y github:mahmut-polat/askbell setup`, then tell the user to restart open chats. That one command installs the app, connects every AI tool it finds, adds the mandatory rule and installs this skill. The user has nothing else to configure.
+
+A repository shows under its folder name. To change that, run `~/.askbell/bin/askbell alias "Friendly name" /path/to/repo`.
+
 ## If askbell fails
 
-If the command is missing or returns an error, ask in the chat as usual and say that askbell did not work.
+If the command returns an error or setup does not work, ask in the chat as usual and say that askbell did not work.
