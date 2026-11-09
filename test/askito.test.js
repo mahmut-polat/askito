@@ -129,6 +129,42 @@ describe('store', () => {
     assert.throws(() => store.later(item.id, true), /only waiting items/);
   });
 
+  test('progress records what the chat is doing and counts as receiving the answer', () => {
+    const store = newStore();
+    const item = store.create({ title: 'Why?' });
+    store.answer(item.id, { decision: 'comment', comment: 'because' });
+    const after = store.progress(item.id, { text: 'Applying it now' });
+    assert.ok(after.deliveredAt);
+    assert.equal(after.status, 'answered');
+    const last = after.messages.at(-1);
+    assert.equal(last.kind, 'progress');
+    assert.equal(last.text, 'Applying it now');
+  });
+
+  test('a chat cannot close an item without saying what happened', () => {
+    const store = newStore();
+    const item = store.create({ title: 'Why?' });
+    assert.throws(() => store.close(item.id, 'agent', '  '), /note is required/);
+    const done = store.close(item.id, 'agent', 'Fixed the bug');
+    assert.equal(done.messages.at(-1).kind, 'result');
+    const other = store.create({ title: 'Mine' });
+    assert.equal(store.close(other.id, 'human').status, 'done');
+  });
+
+  test('follow-ups list what a session has not collected or not reported on', () => {
+    const store = newStore();
+    const waiting = store.create({ title: 'A', sessionId: 's1' });
+    const received = store.create({ title: 'B', sessionId: 's1' });
+    const reported = store.create({ title: 'C', sessionId: 's1' });
+    const foreign = store.create({ title: 'D', sessionId: 's2' });
+    for (const item of [waiting, received, reported, foreign]) store.answer(item.id, { decision: 'comment', comment: 'x' });
+    store.ack(received.id);
+    store.progress(reported.id, { text: 'On it' });
+    const result = store.followups('s1');
+    assert.deepEqual(result.uncollected.map((i) => i.id), [waiting.id]);
+    assert.deepEqual(result.unreported.map((i) => i.id), [received.id]);
+  });
+
   test('items survive a restart', () => {
     const file = path.join(tempDir(), 'items.json');
     const first = new Store(file);
@@ -232,6 +268,13 @@ describe('server', () => {
     assert.ok(res.json().item.laterAt);
     const waited = (await call('GET', `/api/wait?ids=${item.id}&timeout=0`, { headers: agent })).json();
     assert.deepEqual(waited.pending, [item.id]);
+  });
+
+  test('only a chat can report progress', async () => {
+    const item = await create({ title: 'Report me' });
+    await call('POST', `/api/items/${item.id}/answer`, { headers: human(), body: { decision: 'comment', comment: 'ok' } });
+    assert.equal((await call('POST', `/api/items/${item.id}/progress`, { headers: human(), body: { text: 'x' } })).status, 403);
+    assert.equal((await call('POST', `/api/items/${item.id}/progress`, { headers: agent, body: { text: 'Working' } })).status, 200);
   });
 
   test('a cross-site browser post is refused even with the cookie', async () => {
@@ -428,6 +471,26 @@ describe('end to end', () => {
       }
     });
 
+    test('a chat cannot stop while it owes a report on an answer', async () => {
+      const session = { env: { ...env, ASKITO_SESSION: 'follow-1' }, cwd: fakeHome };
+      const posted = await run(process.execPath, [BIN, 'ask', 'Report back', '--project', 'demo'], session);
+      const id = posted.stdout.trim();
+      await answerAsHuman(id, { decision: 'comment', comment: 'use the blue one' });
+      const stopped = hook('stop', { session_id: 'follow-1', last_assistant_message: 'All done.' });
+      assert.equal(stopped.status, 2);
+      assert.match(stopped.stderr, /use the blue one/);
+      const reminder = JSON.parse(hook('reminder', { session_id: 'follow-1' }).stdout).hookSpecificOutput.additionalContext;
+      assert.match(reminder, /use the blue one/);
+      await cli('ack', id);
+      const owed = hook('stop', { session_id: 'follow-1', last_assistant_message: 'All done.' });
+      assert.equal(owed.status, 2);
+      assert.match(owed.stderr, /progress|done/);
+      await cli('progress', id, 'Changed the colour');
+      assert.equal(hook('stop', { session_id: 'follow-1', last_assistant_message: 'All done.' }).status, 0);
+      await assert.rejects(cli('done', id), /what happened/);
+      await cli('done', id, 'Colour changed and deployed');
+    });
+
     test('broken input never blocks a tool', () => {
       const res = spawnSync(process.execPath, [BIN, 'hook', 'block-question'], { input: 'not json', env, cwd: fakeHome, encoding: 'utf8' });
       assert.equal(res.status, 0);
@@ -456,7 +519,7 @@ describe('end to end', () => {
     assert.equal(init.result.protocolVersion, '2025-06-18');
 
     const list = await session.call('tools/list', {});
-    assert.deepEqual(list.result.tools.map((tool) => tool.name), ['askito_ask', 'askito_wait', 'askito_pickup', 'askito_ack', 'askito_reply', 'askito_done']);
+    assert.deepEqual(list.result.tools.map((tool) => tool.name), ['askito_ask', 'askito_wait', 'askito_pickup', 'askito_ack', 'askito_reply', 'askito_progress', 'askito_done']);
 
     const asked = await session.call('tools/call', { name: 'askito_ask', arguments: { title: 'From MCP', project: 'demo', kind: 'approval' } });
     const id = asked.result.content[0].text.match(/id: (\w+)/)[1];

@@ -42,8 +42,6 @@
   "restore": "Restore",
   "chatWaiting": "This chat is waiting and continues as soon as you answer.",
   "chatAway": "This chat is not waiting right now. It collects your answer the next time it runs.",
-  "received": "The chat has received this.",
-  "notCollected": "No chat has collected this yet.",
   "decision_approved": "Approved",
   "decision_rejected": "Rejected",
   "decision_done": "You did it",
@@ -71,5 +69,14 @@
   "openInbox": "Open the full inbox",
   "panelOffline": "Ask·ito is not running. Run askito open in a terminal.",
   "panelMulti": "This question takes several choices. Answer it in the full inbox.",
+  "stateNotReceived": "Not received yet",
+  "stateReceived": "Received, no report yet",
+  "stateWorking": "Working",
+  "stateStalled": "No report for {mins} min",
+  "eventAsked": "Asked",
+  "eventReceived": "The chat received your answer",
+  "eventProgress": "Chat reports",
+  "eventResult": "Result",
+  "eventQuestion": "Chat asks",
   "unsorted": "Unsorted"
 }

@@ -32,7 +32,7 @@ const ITEM = {
 
 type Fetch = { url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }
 
-async function start($: any, on: any, options: { installed?: boolean; items?: object[] } = {}) {
+async function start($: any, on: any, options: { installed?: boolean; items?: object[]; agents?: object[] } = {}) {
   const sent: Fetch[] = []
   let open: object[] = options.items ?? [ITEM]
   on('command.register', () => ({ value: { command: 'askito-panel' } }))
@@ -51,7 +51,8 @@ async function start($: any, on: any, options: { installed?: boolean; items?: ob
       open = []
       return { value: { status: 200, ok: true, headers: {}, text: '{}' } }
     }
-    const text = e.url.includes('/i18n/') ? JSON.stringify(WORDS) : JSON.stringify({ items: open })
+    const list = e.url.includes('status=answered') ? (options.agents ?? []) : open
+    const text = e.url.includes('/i18n/') ? JSON.stringify(WORDS) : JSON.stringify({ items: list })
     return { value: { status: 200, ok: true, headers: {}, text } }
   })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -118,6 +119,22 @@ test('a project filter narrows the list', async ($, on) => {
   await ui.press({ key: 'project-all' })
   for (let i = 0; i < 100; i += 1) await Promise.resolve()
   expect((await ui.find({ type: 'Button', text: /Run the migration/ }))?.text).toBe('Run the migration?')
+  await ui.unmount()
+})
+
+test('With chats shows whether the answer arrived and what the chat did', async ($, on) => {
+  const answered = {
+    ...ITEM,
+    status: 'answered',
+    answer: { decision: 'approved', choices: [], comment: null, at: '2026-11-09T10:01:00.000Z' },
+    deliveredAt: '2026-11-09T10:02:00.000Z',
+    messages: [{ from: 'agent', kind: 'progress', text: 'Running it', at: new Date().toISOString() }],
+  }
+  await start($, on, { items: [ITEM], agents: [answered] })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'view-agents' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect((await ui.find({ type: 'Text', text: /Running it/ }))?.text).toContain('Running it')
   await ui.unmount()
 })
 

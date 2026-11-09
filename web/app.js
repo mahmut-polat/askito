@@ -9,6 +9,7 @@ const TABS = [
   { id: 'done', status: 'done', label: 'tabDone', head: 'headDone', empty: 'emptyDone' },
   { id: 'removed', status: 'dismissed', label: 'tabRemoved', head: 'headRemoved', empty: 'emptyRemoved' },
 ];
+const STALL_MINUTES = 30;
 const KIND_LABEL = { question: 'kindQuestion', approval: 'kindApproval', task: 'kindTask' };
 // Lucide icons, one distinct silhouette per kind.
 const KIND_ICON = {
@@ -192,7 +193,8 @@ function visibleItems() {
     // Urgent first, then oldest first, so nothing sinks to the bottom.
     return items.sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.createdAt.localeCompare(b.createdAt));
   }
-  return items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  // An answer no chat has picked up is the one that needs the user's eye.
+  return items.sort((a, b) => Number(!a.deliveredAt) - Number(!b.deliveredAt) || b.updatedAt.localeCompare(a.updatedAt));
 }
 
 async function request(method, url, body) {
@@ -393,11 +395,24 @@ function answerLine(item) {
   return h('div', { class: 'answer-line' }, parts, item.answer.comment ? h('div', {}, item.answer.comment) : null);
 }
 
+function chatState(item) {
+  if (item.status !== 'answered' || !item.answer) return null;
+  if (!item.deliveredAt) return { label: t('stateNotReceived'), tone: 'warn' };
+  const last = item.messages.filter((m) => m.from === 'agent' && m.at >= item.answer.at).at(-1);
+  const minutes = Math.floor((Date.now() - Date.parse(last?.at ?? item.deliveredAt)) / 60000);
+  if (minutes >= STALL_MINUTES) return { label: t('stateStalled', { mins: minutes }), tone: 'warn', note: last?.text };
+  if (last) return { label: t('stateWorking'), tone: 'ok', note: last.text };
+  return { label: t('stateReceived'), tone: 'info' };
+}
+
+function resultOf(item) {
+  if (item.status !== 'done') return null;
+  return item.messages.filter((m) => m.kind === 'result' || m.from === 'agent').at(-1)?.text ?? null;
+}
+
 function resolvedControls(item) {
   if (item.status === 'answered') {
     return [
-      answerLine(item),
-      h('p', { class: 'note' }, item.deliveredAt ? t('received') : t('notCollected')),
       h(
         'div',
         { class: 'actions' },
@@ -408,30 +423,32 @@ function resolvedControls(item) {
     ];
   }
   if (item.status === 'done') {
-    return [
-      answerLine(item),
-      h('div', { class: 'actions' }, button(item, { label: t('reopen'), action: 'reopen', body: {} }), button(item, { label: t('remove'), kind: 'quiet', action: 'dismiss', body: {} })),
-    ];
+    return [h('div', { class: 'actions' }, button(item, { label: t('reopen'), action: 'reopen', body: {} }), button(item, { label: t('remove'), kind: 'quiet', action: 'dismiss', body: {} }))];
   }
   return [answerLine(item), h('div', { class: 'actions' }, button(item, { label: t('restore'), action: 'reopen', body: {} }))];
 }
 
-function thread(item) {
-  // The closing answer is already shown by answerLine.
-  const messages = item.messages.filter((m) => !(item.answer && m.at === item.answer.at));
-  if (!messages.length) return null;
+const AGENT_EVENT = { progress: 'eventProgress', result: 'eventResult', question: 'eventQuestion' };
+
+function timeline(item) {
+  const events = [{ at: item.createdAt, label: t('eventAsked') }];
+  for (const message of item.messages) {
+    if (message.from === 'human') {
+      const decided = message.decision ? `: ${t(`decision_${message.decision}`)}` : '';
+      const picked = message.choices?.length ? ` (${message.choices.join(', ')})` : '';
+      events.push({ at: message.at, label: `${t('youLabel')}${decided}${picked}`, text: message.text });
+    } else {
+      const fallback = item.status === 'done' ? 'result' : 'question';
+      events.push({ at: message.at, label: t(AGENT_EVENT[message.kind ?? fallback]), text: message.text });
+    }
+  }
+  if (item.deliveredAt) events.push({ at: item.deliveredAt, label: t('eventReceived') });
+  if (events.length === 1) return null;
+  events.sort((a, b) => a.at.localeCompare(b.at));
   return h(
     'ol',
     { class: 'thread' },
-    messages.map((message) =>
-      h(
-        'li',
-        {},
-        h('div', { class: 'thread-who' }, `${message.from === 'agent' ? t('agentLabel') : t('youLabel')}, ${relative(message.at)}`),
-        message.choices?.length ? h('div', {}, message.choices.join(', ')) : null,
-        message.text ? markdown(message.text) : null,
-      ),
-    ),
+    events.map((event) => h('li', {}, h('div', { class: 'thread-who' }, `${event.label}, ${relative(event.at)}`), event.text ? markdown(event.text) : null)),
   );
 }
 
@@ -451,6 +468,9 @@ function kindIcon(kind) {
 function renderRow(item, index) {
   const isOpen = state.selected === item.id;
   const row = () => document.querySelector(`[data-item="${item.id}"]`);
+  const progress = chatState(item);
+  const result = resultOf(item);
+  const note = progress?.note ?? (result ? `${t('eventResult')}: ${result}` : null);
   const meta = h(
     'span',
     { class: 'meta' },
@@ -460,6 +480,7 @@ function renderRow(item, index) {
     item.chat ? h('span', {}, item.chat) : null,
     item.agent ? h('span', {}, item.agent) : null,
     h('span', {}, relative(item.createdAt)),
+    progress ? h('span', { class: `state state-${progress.tone}` }, progress.label) : null,
   );
   const header = h(
     'button',
@@ -474,7 +495,7 @@ function renderRow(item, index) {
     },
     h('span', { class: 'row-num' }, String(index + 1)),
     kindIcon(item.kind),
-    h('span', { class: 'row-text' }, h('span', { class: 'row-title' }, item.title), meta),
+    h('span', { class: 'row-text' }, h('span', { class: 'row-title' }, item.title), meta, note ? h('span', { class: 'row-note' }, note) : null),
   );
   const error = state.error?.id === item.id ? h('p', { class: 'error', role: 'alert' }, state.error.message) : null;
   const detail = isOpen
@@ -482,7 +503,7 @@ function renderRow(item, index) {
         'div',
         { class: 'detail' },
         item.body ? markdown(item.body) : null,
-        thread(item),
+        timeline(item),
         item.status === 'open' ? h('p', { class: `note${item.agentWaiting ? ' live' : ''}` }, item.agentWaiting ? t('chatWaiting') : t('chatAway')) : null,
         item.status === 'open' ? openControls(item, row) : resolvedControls(item),
         error,
@@ -686,7 +707,11 @@ async function start() {
   render();
   new EventSource('/api/events').addEventListener('change', refresh);
   // Waiting-chat indicators expire on the server without an event.
-  setInterval(refresh, 30_000);
+  setInterval(() => {
+    // Forces a redraw so times and the quiet-chat warning stay current.
+    snapshot = '';
+    refresh();
+  }, 30_000);
 }
 
 start();

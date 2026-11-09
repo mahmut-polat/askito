@@ -146,6 +146,7 @@ export class Store extends EventEmitter {
       chat: text(input.chat, 'chat', LIMITS.meta),
       agent: text(input.agent, 'agent', LIMITS.meta),
       cwd: text(input.cwd, 'cwd', 1000),
+      sessionId: text(input.sessionId, 'sessionId', LIMITS.meta),
       key: text(input.key, 'key', LIMITS.meta),
     };
 
@@ -201,7 +202,7 @@ export class Store extends EventEmitter {
     item.deliveredAt = null;
     // New information is worth seeing, even on something set aside.
     item.laterAt = null;
-    item.messages.push({ from: 'agent', text: body, at: new Date().toISOString() });
+    item.messages.push({ from: 'agent', kind: 'question', text: body, at: new Date().toISOString() });
     this.changed('reply', item);
     return item;
   }
@@ -218,9 +219,10 @@ export class Store extends EventEmitter {
     const item = this.get(id);
     if (item.status === 'dismissed') throw new HttpError(409, 'closed', 'this item was removed');
     if (item.status === 'done') return item;
-    const body = text(note, 'note', LIMITS.comment);
+    // The user has to be able to see what came of their answer.
+    const body = text(note, 'note', LIMITS.comment, { required: from === 'agent' });
     item.status = 'done';
-    if (body) item.messages.push({ from, text: body, at: new Date().toISOString() });
+    if (body) item.messages.push({ from, kind: 'result', text: body, at: new Date().toISOString() });
     this.changed('done', item);
     return item;
   }
@@ -247,6 +249,25 @@ export class Store extends EventEmitter {
     item.laterAt = null;
     this.changed('reopened', item);
     return item;
+  }
+
+  progress(id, input) {
+    const item = this.get(id);
+    if (item.status !== 'answered') throw new HttpError(409, 'not_answered', 'progress is for an answered item');
+    const body = text(input.text, 'text', LIMITS.comment, { required: true });
+    const at = new Date().toISOString();
+    item.deliveredAt ??= at;
+    item.messages.push({ from: 'agent', kind: 'progress', text: body, at });
+    this.changed('progress', item);
+    return item;
+  }
+
+  followups(sessionId) {
+    const answered = this.list().filter((i) => i.sessionId === sessionId && i.status === 'answered');
+    return {
+      uncollected: answered.filter((i) => !i.deliveredAt),
+      unreported: answered.filter((i) => i.deliveredAt && !i.messages.some((m) => m.from === 'agent' && m.at >= i.answer.at)),
+    };
   }
 
   // Later only moves an open item out of the way. The asking chat keeps waiting.

@@ -70,9 +70,14 @@ const TOOLS = [
     },
   },
   {
+    name: 'askito_progress',
+    description: 'Tell the human what you are doing about their answer. Call it as soon as you start acting on an answer, and again on long work.',
+    inputSchema: { type: 'object', required: ['id', 'text'], properties: { id: { type: 'string' }, text: { type: 'string', description: 'One line on what you are doing.' } } },
+  },
+  {
     name: 'askito_done',
     description: 'Close an item after you have acted on the answer, or withdraw it if it is no longer needed.',
-    inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, note: { type: 'string', description: 'One line on what happened.' } } },
+    inputSchema: { type: 'object', required: ['id', 'note'], properties: { id: { type: 'string' }, note: { type: 'string', description: 'One line on what you did. The human reads this as the result.' } } },
   },
 ];
 
@@ -85,6 +90,7 @@ const handlers = {
       chat: args.chat || context.chat,
       agent: context.agent,
       cwd: context.cwd,
+      sessionId: context.session,
     });
     return `Posted to the inbox. id: ${item.id}\nCall askito_wait with this id to get the answer.`;
   },
@@ -109,6 +115,10 @@ const handlers = {
   async askito_reply({ id, ...body }) {
     await api('POST', `/api/items/${encodeURIComponent(id)}/reply`, body);
     return `Sent. ${id} is waiting for the human again. Call askito_wait.`;
+  },
+  async askito_progress({ id, text }) {
+    await api('POST', `/api/items/${encodeURIComponent(id)}/progress`, { text });
+    return `Reported on ${id}.`;
   },
   async askito_done({ id, note }) {
     await api('POST', `/api/items/${encodeURIComponent(id)}/done`, { note });

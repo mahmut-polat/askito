@@ -187,6 +187,11 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       return sendJson(res, 200, { items: store.pickup(filter).map(view) });
     }
 
+    if (route === 'GET /api/followups') {
+      require_(who, 'agent');
+      return sendJson(res, 200, store.followups(searchParams.get('session') ?? ''));
+    }
+
     if (route === 'GET /api/wait') {
       require_(who, 'agent');
       const ids = (searchParams.get('ids') ?? '').split(',').filter(Boolean);
@@ -221,6 +226,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       close: ['human', () => store.close(id, 'human', body.note)],
       ack: ['agent', () => store.ack(id)],
       reply: ['agent', () => store.reply(id, body)],
+      progress: ['agent', () => store.progress(id, body)],
       done: ['agent', () => store.close(id, 'agent', body.note)],
     };
     const handler = handlers[action];

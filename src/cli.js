@@ -35,7 +35,8 @@ For agents
   askito pickup [--project NAME] [--chat NAME] [--json]
   askito ack ID
   askito reply ID "Follow-up text"
-  askito done ID ["What happened"]
+  askito progress ID "What you are doing"
+  askito done ID "What you did"
   askito list [--status open|answered|done|dismissed] [--project NAME] [--json]
 
 Exit codes for --wait and wait: 0 answered, 3 removed by the human, 4 timed out.
@@ -100,6 +101,7 @@ async function post(kind, title, values) {
     chat: values.chat ?? context.chat,
     agent: context.agent,
     cwd: context.cwd,
+    sessionId: context.session,
   });
   if (!values.wait) {
     print(values.json ? JSON.stringify(item, null, 2) : item.id);
@@ -207,7 +209,12 @@ export async function main(argv) {
       if (!rest[1]) throw new Error('usage: askito reply ID "Follow-up text"');
       await api('POST', `/api/items/${encodeURIComponent(rest[0])}/reply`, { text: rest[1] });
       return 0;
+    case 'progress':
+      if (!rest[1]) throw new Error('usage: askito progress ID "What you are doing"');
+      await api('POST', `/api/items/${encodeURIComponent(rest[0])}/progress`, { text: rest[1] });
+      return 0;
     case 'done':
+      if (!rest[1]) throw new Error('say what happened: askito done ID "What you did"');
       await api('POST', `/api/items/${encodeURIComponent(rest[0])}/done`, { note: rest[1] });
       return 0;
     default:

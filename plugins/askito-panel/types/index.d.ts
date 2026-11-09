@@ -1,5 +1,7 @@
 export type InboxOption = { id: string; label: string; description: string | null; recommended: boolean }
 
+export type InboxMessage = { from: 'human' | 'agent'; kind?: string; decision?: string; choices?: string[]; text: string | null; at: string }
+
 export type InboxItem = {
   id: string
   kind: 'question' | 'approval' | 'task'
@@ -13,6 +15,9 @@ export type InboxItem = {
   agentWaiting: boolean
   createdAt: string
   laterAt?: string | null
+  answer?: { decision: string; choices: string[]; comment: string | null; at: string } | null
+  deliveredAt?: string | null
+  messages?: InboxMessage[]
 }
 
 export type Catalog = Record<string, string>
@@ -23,6 +28,8 @@ declare module 'claude-code' {
       items: Shaped<InboxItem[]>
       selected: Shaped<string | null>
       filter: Shaped<string | null>
+      agents: Shaped<InboxItem[]>
+      view: Shaped<'waiting' | 'agents'>
       catalog: Shaped<Catalog>
       status: Shaped<'loading' | 'ready' | 'offline'>
       error: Shaped<boolean>

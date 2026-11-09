@@ -36,6 +36,7 @@ export function detectContext(cwd = process.cwd(), env = process.env) {
     project: env.ASKITO_PROJECT || aliases[root ?? cwd] || path.basename(root ?? cwd),
     chat: env.ASKITO_CHAT || (branch && !['main', 'master', 'HEAD'].includes(branch) ? branch : null),
     agent: detectAgent(env),
+    session: env.ASKITO_SESSION || env.CLAUDE_CODE_SESSION_ID || env.CODEX_THREAD_ID || null,
     cwd,
     root: root ?? cwd,
   };

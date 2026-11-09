@@ -42,8 +42,6 @@
   "restore": "Geri getir",
   "chatWaiting": "Bu sohbet bekliyor, cevap verdiğin anda devam eder.",
   "chatAway": "Bu sohbet şu an beklemiyor, cevabını bir sonraki çalışmasında alır.",
-  "received": "Sohbet bunu aldı.",
-  "notCollected": "Henüz hiçbir sohbet bunu almadı.",
   "decision_approved": "Onaylandı",
   "decision_rejected": "Reddedildi",
   "decision_done": "Yaptın",
@@ -71,5 +69,14 @@
   "openInbox": "Gelen kutusunu aç",
   "panelOffline": "Ask·ito çalışmıyor. Terminalde askito open komutunu çalıştır.",
   "panelMulti": "Bu soruda birden fazla seçim var. Gelen kutusundan cevapla.",
+  "stateNotReceived": "Henüz alınmadı",
+  "stateReceived": "Alındı, rapor yok",
+  "stateWorking": "Çalışıyor",
+  "stateStalled": "{mins} dakikadır rapor yok",
+  "eventAsked": "Soruldu",
+  "eventReceived": "Sohbet cevabını aldı",
+  "eventProgress": "Sohbet bildirdi",
+  "eventResult": "Sonuç",
+  "eventQuestion": "Sohbet soruyor",
   "unsorted": "Diğer"
 }

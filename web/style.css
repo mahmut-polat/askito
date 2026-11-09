@@ -403,6 +403,29 @@ kbd {
   background: #2aa5b838;
 }
 
+.state {
+  font-weight: 600;
+}
+
+.state-warn {
+  color: var(--danger);
+}
+
+.state-ok {
+  color: var(--ok);
+}
+
+.state-info {
+  color: var(--text);
+}
+
+.row-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .tag {
   font-weight: 600;
   color: var(--kind);

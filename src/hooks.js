@@ -63,6 +63,19 @@ async function sessionContext(input) {
   return `${RULE}\n\nAnswers no chat has collected yet. Act on the ones that are yours and ack them:\n\n${items.map(formatItem).join('\n\n')}`;
 }
 
+async function followUps(input) {
+  if (!input.session_id) return '';
+  const { uncollected, unreported } = await api('GET', `/api/followups?session=${encodeURIComponent(input.session_id)}`);
+  const parts = [];
+  if (uncollected.length) parts.push(`The user answered. Act on these and ack them:\n\n${uncollected.map(formatItem).join('\n\n')}`);
+  if (unreported.length) {
+    parts.push(
+      localize(`You received these answers and the user cannot see what you did about them. Run \`~/.askito/bin/askito progress ID "what you are doing"\` now and \`~/.askito/bin/askito done ID "what you did"\` when finished:\n\n${unreported.map(formatItem).join('\n\n')}`),
+    );
+  }
+  return parts.join('\n\n');
+}
+
 export async function runHook(name) {
   const input = await readInput();
   if (!input) return 0;
@@ -79,13 +92,17 @@ export async function runHook(name) {
       return asksUser ? refuse(RULE) : 0;
     }
     case 'stop':
-      if (input.stop_hook_active || !endsOnQuestion(lastAssistantText(input))) return 0;
-      return refuse(`Your reply ends on a question. ${RULE} Post it there now and end your turn without asking it.`);
+    {
+      if (input.stop_hook_active) return 0;
+      if (endsOnQuestion(lastAssistantText(input))) return refuse(`Your reply ends on a question. ${RULE} Post it there now and end your turn without asking it.`);
+      const owed = await followUps(input);
+      return owed ? refuse(owed) : 0;
+    }
     case 'session':
-      process.stdout.write(context({ event: 'SessionStart', body: await sessionContext(input) }));
+      process.stdout.write(context({ event: 'SessionStart', body: [await sessionContext(input), await followUps(input)].filter(Boolean).join('\n\n') }));
       return 0;
     case 'reminder':
-      process.stdout.write(context({ event: 'UserPromptSubmit', body: RULE }));
+      process.stdout.write(context({ event: 'UserPromptSubmit', body: [RULE, await followUps(input)].filter(Boolean).join('\n\n') }));
       return 0;
     default:
       return 0;

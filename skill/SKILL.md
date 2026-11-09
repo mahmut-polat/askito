@@ -58,7 +58,8 @@ Read `comment` even when there is a decision. It can change what the decision me
 ## After the answer
 
 - Need more detail on the same subject: `~/.askito/bin/askito reply ID "Your follow-up"`, then wait again.
-- Finished acting on the answer: `~/.askito/bin/askito done ID "What happened, in one line"`.
+- Starting on the answer: `~/.askito/bin/askito progress ID "What you are doing"`. Do this straight away, and again during long work.
+- Finished: `~/.askito/bin/askito done ID "What you did"`. The note is required, because it is the result the user reads.
 
 ## When a session starts
 

@@ -41,9 +41,37 @@ function kindSvg(kind: InboxItem['kind']) {
 const items = atom({ plugin: 'askito-panel', key: 'items' } as const, [], { shape: 'items-1' })
 const selected = atom({ plugin: 'askito-panel', key: 'selected' } as const, null, { shape: 'selected-1' })
 const filter = atom({ plugin: 'askito-panel', key: 'filter' } as const, null, { shape: 'filter-1' })
+const agents = atom({ plugin: 'askito-panel', key: 'agents' } as const, [], { shape: 'agents-1' })
+const view = atom({ plugin: 'askito-panel', key: 'view' } as const, 'waiting', { shape: 'view-1' })
 const catalog = atom({ plugin: 'askito-panel', key: 'catalog' } as const, {}, { shape: 'catalog-1' })
 const status = atom({ plugin: 'askito-panel', key: 'status' } as const, 'loading', { shape: 'status-1' })
 const error = atom({ plugin: 'askito-panel', key: 'error' } as const, false, { shape: 'error-1' })
+
+const STALL_MINUTES = 30
+const TONE = { warn: '#e06070', ok: '#2fa36b', info: undefined } as const
+
+function chatState(item: InboxItem, t: (key: string) => string) {
+  if (!item.answer) return null
+  if (!item.deliveredAt) return { label: t('stateNotReceived'), tone: 'warn' as const }
+  const answeredAt = item.answer.at
+  const last = (item.messages ?? []).filter(m => m.from === 'agent' && m.at >= answeredAt).at(-1)
+  const minutes = Math.floor((Date.now() - Date.parse(last?.at ?? item.deliveredAt)) / 60000)
+  if (minutes >= STALL_MINUTES) return { label: t('stateStalled').replace('{mins}', String(minutes)), tone: 'warn' as const, note: last?.text ?? undefined }
+  if (last) return { label: t('stateWorking'), tone: 'ok' as const, note: last.text ?? undefined }
+  return { label: t('stateReceived'), tone: 'info' as const }
+}
+
+function eventLines(item: InboxItem, t: (key: string) => string) {
+  const events: { at: string; line: string }[] = (item.messages ?? []).map(message => {
+    const label =
+      message.from === 'human'
+        ? [t('youLabel'), message.decision ? t(`decision_${message.decision}`) : '', message.choices?.join(', ')].filter(Boolean).join(': ')
+        : t(message.kind === 'progress' ? 'eventProgress' : message.kind === 'question' ? 'eventQuestion' : 'eventResult')
+    return { at: message.at, line: message.text ? `${label}: ${message.text}` : label }
+  })
+  if (item.deliveredAt) events.push({ at: item.deliveredAt, line: t('eventReceived') })
+  return events.sort((a, b) => a.at.localeCompare(b.at)).map(event => event.line)
+}
 
 // `selected` holds this value when the person has folded every row away.
 const COLLAPSED = 'none'
@@ -110,14 +138,20 @@ async function refresh($: EngineInterface) {
     const current = await read($, items)
     if (JSON.stringify(current) !== JSON.stringify(next)) await update($, items, () => next)
     const picked = await read($, selected)
-    if (picked !== COLLAPSED && !next.some(item => item.id === picked)) await update($, selected, () => next[0]?.id ?? null)
+    const answered = await request($, link, '/api/items?status=answered')
+    const nextAgents = answered.ok
+      ? (JSON.parse(answered.text) as { items: InboxItem[] }).items.sort((a, b) => Number(!a.deliveredAt) - Number(!b.deliveredAt))
+      : await read($, agents)
+    if (JSON.stringify(await read($, agents)) !== JSON.stringify(nextAgents)) await update($, agents, () => nextAgents)
+    const known = next.some(item => item.id === picked) || nextAgents.some(item => item.id === picked)
+    if (picked !== COLLAPSED && !known) await update($, selected, () => next[0]?.id ?? null)
     if ((await read($, status)) !== 'ready') await update($, status, () => 'ready')
   } catch {
     if ((await read($, status)) !== 'offline') await update($, status, () => 'offline')
   }
 }
 
-async function act($: EngineInterface, id: string, action: 'answer' | 'dismiss' | 'later', body: object) {
+async function act($: EngineInterface, id: string, action: 'answer' | 'dismiss' | 'later' | 'close' | 'reopen', body: object) {
   const link = await connect($)
   const res = link ? await request($, link, `/api/items/${id}/${action}`, body).catch(() => null) : null
   // A 409 means the page answered first; the refresh below shows that.
@@ -149,6 +183,8 @@ export const register: Register = on => {
     const list = await read($, items)
     const picked = await read($, selected)
     const chosen = await read($, filter)
+    const others = await read($, agents)
+    const mode = await read($, view)
     const words = await read($, catalog)
     const state = await read($, status)
     const failed = await read($, error)
@@ -162,21 +198,10 @@ export const register: Register = on => {
         </Box>
       )
     }
-    if (!list.length) {
-      return (
-        <Box flexDirection="column" padding="md" gap="sm">
-          <Text size="heading" weight="semibold">
-            {t('emptyWaitingTitle')}
-          </Text>
-          <Text dimColor>{t('emptyWaitingBody')}</Text>
-          {inbox}
-        </Box>
-      )
-    }
-
-    const projects = [...new Set(list.map(item => item.project))].sort((a, b) => a.localeCompare(b))
+    const source = mode === 'agents' ? others : list
+    const projects = [...new Set(source.map(item => item.project))].sort((a, b) => a.localeCompare(b))
     const active = chosen && projects.includes(chosen) ? chosen : null
-    const shown = active ? list.filter(item => item.project === active) : list
+    const shown = active ? source.filter(item => item.project === active) : source
     const openId = picked === COLLAPSED ? null : shown.some(item => item.id === picked) ? picked : (shown[0]?.id ?? null)
     const projectName = (name: string) => (name === 'unsorted' ? t('unsorted') : name)
     const chip = (key: string, label: string, count: number, value: string | null) => (
@@ -253,7 +278,27 @@ export const register: Register = on => {
       )
     }
 
+    const agentDetail = (item: InboxItem) => (
+      <Box flexDirection="column" gap="xs" marginTop="sm">
+        {item.body ? <Markdown text={item.body} /> : null}
+        {eventLines(item, t).map(line => (
+          <Text size="caption">{line}</Text>
+        ))}
+        <Box flexDirection="row" flexWrap="wrap" gap="sm" alignItems="center" marginTop="xs">
+          <Button key={`complete-${item.id}`} variant="primary" label={t('complete')} onPress={() => void act($, item.id, 'close', {})} />
+          <Button key={`change-${item.id}`} variant="secondary" label={t('changeAnswer')} onPress={() => void act($, item.id, 'reopen', {})} />
+        </Box>
+      </Box>
+    )
+
+    const viewChip = (value: 'waiting' | 'agents', label: string, count: number) => (
+      <Button key={`view-${value}`} variant={mode === value ? 'primary' : 'secondary'} onPress={() => void update($, view, () => value)}>
+        {label} <Text dimColor>{count}</Text>
+      </Button>
+    )
+
     const row = (item: InboxItem, index: number) => {
+      const state = mode === 'agents' ? chatState(item, t) : null
       const isOpen = item.id === openId
       return (
         <Box flexDirection="row" gap="sm" alignItems="flex-start">
@@ -287,7 +332,12 @@ export const register: Register = on => {
                 </Text>
               ) : null}
             </Box>
-            {isOpen ? detail(item) : null}
+            {state ? (
+              <Text size="caption" weight="medium" color={TONE[state.tone]}>
+                {state.note ? `${state.label}: ${state.note}` : state.label}
+              </Text>
+            ) : null}
+            {isOpen ? (mode === 'agents' ? agentDetail(item) : detail(item)) : null}
           </Box>
         </Box>
       )
@@ -300,17 +350,30 @@ export const register: Register = on => {
             <Text size="title" weight="bold" tabular>
               {shown.length}
             </Text>
-            <Text size="heading">{t('headWaiting')}</Text>
+            <Text size="heading">{t(mode === 'agents' ? 'headAgents' : 'headWaiting')}</Text>
           </Box>
           {inbox}
         </Box>
+        <Box flexDirection="row" flexWrap="wrap" gap="xs">
+          {viewChip('waiting', t('tabWaiting'), list.length)}
+          {viewChip('agents', t('tabAgents'), others.length)}
+        </Box>
         {projects.length > 1 ? (
           <Box flexDirection="row" flexWrap="wrap" gap="xs">
-            {chip('all', t('allProjects'), list.length, null)}
-            {projects.map(name => chip(name, projectName(name), list.filter(item => item.project === name).length, name))}
+            {chip('all', t('allProjects'), source.length, null)}
+            {projects.map(name => chip(name, projectName(name), source.filter(item => item.project === name).length, name))}
           </Box>
         ) : null}
-        {shown.map(row)}
+        {shown.length ? (
+          shown.map(row)
+        ) : (
+          <Box flexDirection="column" gap="xs">
+            <Text weight="semibold">{t(mode === 'agents' ? 'emptyAgentsTitle' : 'emptyWaitingTitle')}</Text>
+            <Text size="caption" dimColor>
+              {t(mode === 'agents' ? 'emptyAgentsBody' : 'emptyWaitingBody')}
+            </Text>
+          </Box>
+        )}
       </Box>
     )
   })
