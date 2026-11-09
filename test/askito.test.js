@@ -374,7 +374,7 @@ describe('end to end', () => {
     test('the chat question tool is blocked and points at askito', () => {
       const res = hook('block-question', { tool_name: 'AskUserQuestion', tool_input: {} });
       assert.equal(res.status, 2);
-      assert.match(res.stderr, /askito ask/);
+      assert.match(res.stderr, /askito(\.cmd)? ask/);
     });
 
     test('end-of-turn buttons are blocked only when they carry a question', () => {
