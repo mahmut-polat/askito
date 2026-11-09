@@ -146,6 +146,12 @@ function markdown(source) {
   return root;
 }
 
+function stamp(iso) {
+  const date = new Date(iso);
+  const year = date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric';
+  return new Intl.DateTimeFormat(language, { day: 'numeric', month: 'short', year, hour: '2-digit', minute: '2-digit' }).format(date);
+}
+
 function relative(iso) {
   const seconds = Math.round((new Date(iso) - Date.now()) / 1000);
   const units = [
@@ -448,7 +454,7 @@ function timeline(item) {
   return h(
     'ol',
     { class: 'thread' },
-    events.map((event) => h('li', {}, h('div', { class: 'thread-who' }, `${event.label}, ${relative(event.at)}`), event.text ? markdown(event.text) : null)),
+    events.map((event) => h('li', {}, h('div', { class: 'thread-who' }, `${stamp(event.at)}, ${event.label}`), event.text ? markdown(event.text) : null)),
   );
 }
 
@@ -479,7 +485,7 @@ function renderRow(item, index) {
     item.urgent ? h('span', { class: 'tag urgent' }, t('urgent')) : null,
     item.chat ? h('span', {}, item.chat) : null,
     item.agent ? h('span', {}, item.agent) : null,
-    h('span', {}, relative(item.createdAt)),
+    h('time', { datetime: item.createdAt }, `${stamp(item.createdAt)} (${relative(item.createdAt)})`),
     progress ? h('span', { class: `state state-${progress.tone}` }, progress.label) : null,
   );
   const header = h(

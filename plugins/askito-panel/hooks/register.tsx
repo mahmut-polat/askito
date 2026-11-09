@@ -50,6 +50,14 @@ const error = atom({ plugin: 'askito-panel', key: 'error' } as const, false, { s
 const STALL_MINUTES = 30
 const TONE = { warn: '#e06070', ok: '#2fa36b', info: undefined } as const
 
+let locale: string | undefined
+
+function stamp(iso: string) {
+  const date = new Date(iso)
+  const year = date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric'
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year, hour: '2-digit', minute: '2-digit' }).format(date)
+}
+
 function chatState(item: InboxItem, t: (key: string) => string) {
   if (!item.answer) return null
   if (!item.deliveredAt) return { label: t('stateNotReceived'), tone: 'warn' as const }
@@ -67,9 +75,9 @@ function eventLines(item: InboxItem, t: (key: string) => string) {
       message.from === 'human'
         ? [t('youLabel'), message.decision ? t(`decision_${message.decision}`) : '', message.choices?.join(', ')].filter(Boolean).join(': ')
         : t(message.kind === 'progress' ? 'eventProgress' : message.kind === 'question' ? 'eventQuestion' : 'eventResult')
-    return { at: message.at, line: message.text ? `${label}: ${message.text}` : label }
+    return { at: message.at, line: message.text ? `${stamp(message.at)}  ${label}: ${message.text}` : `${stamp(message.at)}  ${label}` }
   })
-  if (item.deliveredAt) events.push({ at: item.deliveredAt, line: t('eventReceived') })
+  if (item.deliveredAt) events.push({ at: item.deliveredAt, line: `${stamp(item.deliveredAt)}  ${t('eventReceived')}` })
   return events.sort((a, b) => a.at.localeCompare(b.at)).map(event => event.line)
 }
 
@@ -96,6 +104,7 @@ async function connect($: EngineInterface): Promise<Connection | null> {
     const port = Number(await $.env.get('ASKITO_PORT')) || config.port || 4517
     // The desktop app only makes a link of https: or http://localhost.
     inboxHref = `http://localhost:${port}/login?t=${token}`
+    locale = config.language
     return { port, token, language: config.language }
   } catch {
     return null
@@ -331,6 +340,9 @@ export const register: Register = on => {
                   {item.chat}
                 </Text>
               ) : null}
+              <Text size="caption" dimColor tabular>
+                {stamp(item.createdAt)}
+              </Text>
             </Box>
             {state ? (
               <Text size="caption" weight="medium" color={TONE[state.tone]}>

@@ -138,6 +138,13 @@ test('With chats shows whether the answer arrived and what the chat did', async 
   await ui.unmount()
 })
 
+test('every row shows the date and time it was asked', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount(PANE)
+  expect((await ui.find({ type: 'Text', text: /Nov/ }))?.text).toMatch(/\d{1,2}:\d{2}/)
+  await ui.unmount()
+})
+
 test('with one project there is no filter row', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount(PANE)
