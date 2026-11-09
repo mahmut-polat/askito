@@ -117,7 +117,8 @@ export async function waitForItems(ids, { timeoutSeconds = 0, all = false } = {}
 }
 
 export function inboxUrl() {
-  return `${base()}/login?t=${uiToken()}`;
+  // Names under .localhost reach this machine with no DNS change or admin rights.
+  return `http://askito.localhost:${getPort()}/login?t=${uiToken()}`;
 }
 
 export function formatItem(item) {

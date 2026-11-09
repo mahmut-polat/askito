@@ -170,6 +170,17 @@ describe('server', () => {
     assert.equal(res.status, 403);
   });
 
+  test('the friendly askito.localhost address is accepted, for reads and browser posts', async () => {
+    const friendly = `askito.localhost:${port}`;
+    assert.equal((await call('GET', '/api/health', { headers: { Host: friendly } })).status, 200);
+    const item = await create({ kind: 'approval', title: 'From the friendly host' });
+    const res = await call('POST', `/api/items/${item.id}/answer`, {
+      headers: { Host: friendly, Cookie: human().Cookie, Origin: `http://${friendly}` },
+      body: { decision: 'approved' },
+    });
+    assert.equal(res.status, 200);
+  });
+
   test('reading items needs credentials', async () => {
     assert.equal((await call('GET', '/api/items')).status, 401);
   });

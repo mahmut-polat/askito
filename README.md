@@ -30,7 +30,7 @@ Setup needs Node 20 or newer and git, and works the same on macOS, Linux and Win
 
 The rest of this page writes the command as `askito`. Use the full path from this table.
 
-In Claude Code, typing `/askito` opens it too. Bookmark the page if you like. The server starts by itself the first time a chat posts, or when you run `askito open`.
+In Claude Code, typing `/askito` opens it too. The page lives at `http://askito.localhost:4517`, which needs no DNS change or admin rights. After the first `askito open` you can type that address in your browser or bookmark it. The server starts by itself the first time a chat posts, or when you run `askito open`.
 
 Add `--dry-run` to see which files setup would touch, or `--tools claude,cursor` to choose. Setup copies each config file to `~/.askito/backups` before its first change, and it leaves alone any JSON file it cannot fully parse (it prints what to add by hand).
 

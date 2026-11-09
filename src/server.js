@@ -69,7 +69,7 @@ function sendJson(res, status, payload) {
 }
 
 export function createApp({ store, port, tokens, onShutdown, sendNotification = notify }) {
-  const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
+  const allowedHosts = new Set([`askito.localhost:${port}`, `127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
   const allowedOrigins = new Set([...allowedHosts].map((h) => `http://${h}`));
   const streams = new Set();
   const waiters = new Map();
