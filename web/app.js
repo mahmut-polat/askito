@@ -485,7 +485,7 @@ function renderSide() {
     if (item.status === 'open') counts.set(item.project, counts.get(item.project) + 1);
   }
   const total = [...counts.values()].reduce((sum, n) => sum + n, 0);
-  document.title = total ? `(${total}) askito` : 'askito';
+  document.title = total ? `(${total}) Ask·ito` : 'Ask·ito';
   const entry = (name, label, count) =>
     h(
       'li',
@@ -512,7 +512,7 @@ function renderSide() {
   return h(
     'aside',
     { class: 'side' },
-    h('div', { class: 'brand' }, h('img', { src: '/icon.svg', alt: '' }), 'askito'),
+    h('div', { class: 'brand' }, h('img', { src: '/icon.svg', alt: '' }), h('span', {}, h('span', { class: 'brand-ask' }, 'Ask'), '·ito')),
     h('nav', { 'aria-label': t('projects') }, h('h2', {}, t('projects')), h('ul', { class: 'projects' }, entry(null, t('allProjects'), total), names.map((name) => entry(name, projectLabel(name), counts.get(name))))),
     h(
       'div',

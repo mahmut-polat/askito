@@ -258,7 +258,7 @@ describe('server', () => {
     const before_ = notifications.length;
     await create({ title: 'Ping', project: 'demo' });
     assert.equal(notifications.length, before_ + 1);
-    assert.deepEqual(notifications.at(-1), ['askito: demo', 'Ping']);
+    assert.deepEqual(notifications.at(-1), ['Ask·ito: demo', 'Ping']);
   });
 
   test('the login link sets an HttpOnly strict cookie and a wrong link does not', async () => {

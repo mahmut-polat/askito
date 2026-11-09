@@ -11,6 +11,7 @@
   --danger: #a8241c;
   --danger-text: #ffffff;
   --ok: #2a6339;
+  --brand: #1453e8;
   --focus: #1f5fbf;
   --kind-question: #1f5fbf;
   --kind-question-soft: #e3edfb;
@@ -46,6 +47,7 @@
   --danger: #f2867e;
   --danger-text: #2a0705;
   --ok: #86c896;
+  --brand: #7fa8ff;
   --focus: #7fb2ff;
   --kind-question: #8ab8ff;
   --kind-question-soft: #1c2b44;
@@ -115,6 +117,11 @@ textarea {
   font-size: 18px;
   font-weight: 650;
   letter-spacing: -0.01em;
+}
+
+.brand-ask {
+  color: var(--brand);
+  font-weight: 750;
 }
 
 .brand img {

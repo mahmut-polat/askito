@@ -85,7 +85,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
 
   store.on('change', ({ type, item }) => {
     broadcast();
-    if (type === 'created' || type === 'reply') sendNotification(`askito: ${item.project}`, item.title);
+    if (type === 'created' || type === 'reply') sendNotification(`Ask·ito: ${item.project}`, item.title);
   });
 
   function caller(req) {
