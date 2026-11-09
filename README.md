@@ -17,7 +17,7 @@ npx -y github:mahmut-polat/askito setup
 Or paste this into any AI coding tool:
 
 ```text
-Read https://raw.githubusercontent.com/mahmut-polat/askito/main/INSTALL.md and follow it.
+I run too many AI chats at once, and each one stops in its own tab to ask me something. Install askito, a local inbox where every chat posts its questions, approvals and jobs for me, so I can answer them all from one page and each chat carries on by itself. It runs only on this machine. Read https://raw.githubusercontent.com/mahmut-polat/askito/main/INSTALL.md and follow it.
 ```
 
 Setup needs Node 20 or newer and git, and works the same on macOS, Linux and Windows. It copies askito to `~/.askito`, finds the AI tools on your machine and connects each one. Restart open chats afterwards, then open the inbox:
