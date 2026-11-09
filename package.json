@@ -13,6 +13,7 @@
     "web",
     "skill",
     "plugins",
+    "extensions",
     ".claude-plugin",
     "INSTALL.md",
     "LICENSE",

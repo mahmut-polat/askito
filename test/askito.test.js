@@ -275,6 +275,7 @@ describe('server', () => {
     assert.equal(res.status, 200);
     assert.match(res.headers['content-security-policy'], /script-src 'self'/);
     assert.doesNotMatch(res.headers['content-security-policy'], /unsafe/);
+    assert.match(res.headers['content-security-policy'], /frame-ancestors chrome-extension:;?$|frame-ancestors chrome-extension:\s*(;|$)/);
   });
 
   test('the page does not load without the browser cookie', async () => {

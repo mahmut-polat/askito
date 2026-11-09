@@ -10,7 +10,7 @@ const MD_START = '<!-- askito:start -->';
 const MD_END = '<!-- askito:end -->';
 const TOML_START = '# askito:start';
 const TOML_END = '# askito:end';
-const APP_PARTS = ['bin', 'src', 'web', 'skill', 'plugins', '.claude-plugin', 'package.json'];
+const APP_PARTS = ['bin', 'src', 'web', 'skill', 'plugins', 'extensions', '.claude-plugin', 'package.json'];
 const isWindows = process.platform === 'win32';
 
 const home = () => process.env.HOME || process.env.USERPROFILE || os.homedir();

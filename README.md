@@ -68,6 +68,12 @@ Coding tools can't be woken from the outside, so each chat has to be listening. 
 
 If the chat has already ended, your answer stays in the inbox. The next session in that repository runs `askito pickup`, finds it, and acts on it.
 
+## Side panels
+
+In Claude Code, setup installs a panel beside the chat with the open items and their answer controls. It appears in sessions started after setup, and `/askito-panel` reopens it. On Windows setup skips this step, so run `claude plugin marketplace add %USERPROFILE%\.askito\app` and then `claude plugin install askito-panel@askito`.
+
+For claude.ai, chatgpt.com or any other tab, there is a Chrome side panel. Chrome does not let a program install an extension, so this one takes a manual step: open `chrome://extensions`, turn on Developer mode, choose Load unpacked, and pick `~/.askito/app/extensions/chrome`. Run `askito open` once with Chrome as your browser so the panel is signed in, then click the askito icon in the toolbar.
+
 ## Supported tools
 
 | Tool | Setup writes |
