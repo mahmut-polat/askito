@@ -17,6 +17,7 @@ export type InboxItem = {
   laterAt?: string | null
   answer?: { decision: string; choices: string[]; comment: string | null; at: string } | null
   deliveredAt?: string | null
+  orphaned?: boolean
   messages?: InboxMessage[]
 }
 

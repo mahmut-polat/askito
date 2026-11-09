@@ -70,6 +70,11 @@ const TOOLS = [
     },
   },
   {
+    name: 'askito_claim',
+    description: 'Take over an answer no chat is following in this project, so the work does not get stuck. Then report with askito_progress and askito_done.',
+    inputSchema: { type: 'object', required: ['id'], properties: { id: { type: 'string' }, cwd: cwdField } },
+  },
+  {
     name: 'askito_progress',
     description: 'Tell the human what you are doing about their answer. Call it as soon as you start acting on an answer, and again on long work.',
     inputSchema: { type: 'object', required: ['id', 'text'], properties: { id: { type: 'string' }, text: { type: 'string', description: 'One line on what you are doing.' } } },
@@ -115,6 +120,11 @@ const handlers = {
   async askito_reply({ id, ...body }) {
     await api('POST', `/api/items/${encodeURIComponent(id)}/reply`, body);
     return `Sent. ${id} is waiting for the human again. Call askito_wait.`;
+  },
+  async askito_claim({ id, cwd }) {
+    const here = detectContext(cwd || process.cwd());
+    const { item } = await api('POST', `/api/items/${encodeURIComponent(id)}/claim`, { sessionId: here.session ?? `mcp-${process.pid}`, chat: here.chat, agent: here.agent });
+    return formatItem(item);
   },
   async askito_progress({ id, text }) {
     await api('POST', `/api/items/${encodeURIComponent(id)}/progress`, { text });

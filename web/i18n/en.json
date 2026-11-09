@@ -80,5 +80,17 @@
   "eventQuestion": "Chat asks",
   "panelOpen": "Open",
   "panelClose": "Close",
+  "stateOrphaned": "No chat is following this",
+  "eventHandover": "Another chat took this over",
+  "eventAssigned": "You assigned it to a chat",
+  "assignProject": "Project",
+  "assignChat": "Chat",
+  "assignAnyChat": "Any chat in this project",
+  "chatUnknown": "Unknown chat",
+  "mergeTitle": "Map projects",
+  "mergeFrom": "Move everything from",
+  "mergeTo": "Into",
+  "mergeAction": "Map",
+  "mergeConfirm": "Move every item from {from} into {to}? New items under {from} will go there too.",
   "unsorted": "Unsorted"
 }

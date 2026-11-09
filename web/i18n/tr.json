@@ -80,5 +80,17 @@
   "eventQuestion": "Sohbet soruyor",
   "panelOpen": "Aç",
   "panelClose": "Kapat",
+  "stateOrphaned": "Bunu takip eden sohbet yok",
+  "eventHandover": "Başka bir sohbet devraldı",
+  "eventAssigned": "Bir sohbete atadın",
+  "assignProject": "Proje",
+  "assignChat": "Sohbet",
+  "assignAnyChat": "Bu projedeki herhangi bir sohbet",
+  "chatUnknown": "Bilinmeyen sohbet",
+  "mergeTitle": "Projeleri eşleştir",
+  "mergeFrom": "Şundakilerin hepsini",
+  "mergeTo": "Şuna taşı",
+  "mergeAction": "Eşleştir",
+  "mergeConfirm": "{from} içindeki her iş {to} altına taşınsın mı? {from} adıyla gelen yeni işler de oraya gider.",
   "unsorted": "Diğer"
 }

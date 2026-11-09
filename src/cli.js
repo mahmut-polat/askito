@@ -35,6 +35,7 @@ For agents
   askito pickup [--project NAME] [--chat NAME] [--json]
   askito ack ID
   askito reply ID "Follow-up text"
+  askito claim ID                  Take over an answer no chat is following
   askito progress ID "What you are doing"
   askito done ID "What you did"
   askito list [--status open|answered|done|dismissed] [--project NAME] [--json]
@@ -209,6 +210,12 @@ export async function main(argv) {
       if (!rest[1]) throw new Error('usage: askito reply ID "Follow-up text"');
       await api('POST', `/api/items/${encodeURIComponent(rest[0])}/reply`, { text: rest[1] });
       return 0;
+    case 'claim': {
+      const here = detectContext();
+      const { item } = await api('POST', `/api/items/${encodeURIComponent(rest[0])}/claim`, { sessionId: here.session ?? `chat-${process.ppid}`, chat: here.chat, agent: here.agent });
+      print(formatItem(item));
+      return 0;
+    }
     case 'progress':
       if (!rest[1]) throw new Error('usage: askito progress ID "What you are doing"');
       await api('POST', `/api/items/${encodeURIComponent(rest[0])}/progress`, { text: rest[1] });

@@ -94,9 +94,10 @@ function groupItems(items: InboxItem[]) {
 
 function chatState(item: InboxItem, t: (key: string) => string) {
   if (!item.answer) return null
+  if (item.orphaned) return { label: t('stateOrphaned'), tone: 'warn' as const }
   if (!item.deliveredAt) return { label: t('stateNotReceived'), tone: 'warn' as const }
   const answeredAt = item.answer.at
-  const last = (item.messages ?? []).filter(m => m.from === 'agent' && m.at >= answeredAt).at(-1)
+  const last = (item.messages ?? []).filter(m => m.from === 'agent' && m.kind !== 'handover' && m.at >= answeredAt).at(-1)
   const minutes = Math.floor((Date.now() - Date.parse(last?.at ?? item.deliveredAt)) / 60000)
   if (minutes >= STALL_MINUTES) return { label: t('stateStalled').replace('{mins}', String(minutes)), tone: 'warn' as const, note: last?.text ?? undefined }
   if (last) return { label: t('stateWorking'), tone: 'ok' as const, note: last.text ?? undefined }
@@ -106,9 +107,11 @@ function chatState(item: InboxItem, t: (key: string) => string) {
 function eventLines(item: InboxItem, t: (key: string) => string) {
   const events: { at: string; line: string }[] = (item.messages ?? []).map(message => {
     const label =
-      message.from === 'human'
+      message.kind === 'assigned'
+        ? t('eventAssigned')
+        : message.from === 'human'
         ? [t('youLabel'), message.decision ? t(`decision_${message.decision}`) : '', message.choices?.join(', ')].filter(Boolean).join(': ')
-        : t(message.kind === 'progress' ? 'eventProgress' : message.kind === 'question' ? 'eventQuestion' : 'eventResult')
+        : t(message.kind === 'handover' ? 'eventHandover' : message.kind === 'progress' ? 'eventProgress' : message.kind === 'question' ? 'eventQuestion' : 'eventResult')
     return { at: message.at, line: message.text ? `${stamp(message.at)}  ${label}: ${message.text}` : `${stamp(message.at)}  ${label}` }
   })
   if (item.deliveredAt) events.push({ at: item.deliveredAt, line: `${stamp(item.deliveredAt)}  ${t('eventReceived')}` })

@@ -78,7 +78,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
     const entry = waiters.get(id);
     return Boolean(entry && (entry.active > 0 || Date.now() - entry.last < WAITER_GRACE_MS));
   };
-  const view = (item) => ({ ...item, agentWaiting: item.status === 'open' && waiting(item.id) });
+  const view = (item) => ({ ...item, agentWaiting: item.status === 'open' && waiting(item.id), orphaned: store.isOrphan(item, { isWaited: waiting }) });
   const broadcast = () => {
     for (const stream of streams) stream.write('event: change\ndata: {}\n\n');
   };
@@ -189,7 +189,23 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
 
     if (route === 'GET /api/followups') {
       require_(who, 'agent');
-      return sendJson(res, 200, store.followups(searchParams.get('session') ?? ''));
+      const session = searchParams.get('session') ?? '';
+      const project = searchParams.get('project') ?? undefined;
+      store.touchSession({ id: session, project, chat: searchParams.get('chat') ?? undefined, agent: searchParams.get('agent') ?? undefined });
+      const orphans = project ? store.orphans({ project, session, isWaited: waiting }).map(view) : [];
+      return sendJson(res, 200, { ...store.followups(session), orphans });
+    }
+
+    if (route === 'GET /api/directory') {
+      require_(who, 'human');
+      return sendJson(res, 200, store.directory());
+    }
+
+    if (route === 'POST /api/projects/merge') {
+      require_(who, 'human');
+      const body = await readJson(req);
+      store.mergeProject(body.from, body.to);
+      return sendJson(res, 200, store.directory());
     }
 
     if (route === 'GET /api/wait') {
@@ -223,6 +239,14 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       dismiss: ['human', () => store.dismiss(id, body.note)],
       reopen: ['human', () => store.reopen(id)],
       later: ['human', () => store.later(id, body.later !== false)],
+      assign: ['human', () => store.assign(id, body)],
+      claim: [
+        'agent',
+        () => {
+          store.touchSession({ id: body.sessionId, chat: body.chat, agent: body.agent });
+          return store.claim(id, body.sessionId);
+        },
+      ],
       close: ['human', () => store.close(id, 'human', body.note)],
       ack: ['agent', () => store.ack(id)],
       reply: ['agent', () => store.reply(id, body)],

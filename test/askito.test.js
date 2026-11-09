@@ -165,6 +165,85 @@ describe('store', () => {
     assert.deepEqual(result.unreported.map((i) => i.id), [received.id]);
   });
 
+  describe('handing work between chats', () => {
+    const OLD = Date.now() + 11 * 60 * 1000;
+
+    function answered(store, input) {
+      const item = store.create({ title: 'Work', project: 'p', ...input });
+      store.answer(item.id, { decision: 'comment', comment: 'go' });
+      return item;
+    }
+
+    test('an answer nobody collects becomes an orphan for other chats in the project', () => {
+      const store = newStore();
+      const item = answered(store, { sessionId: 'gone' });
+      answered(store, { project: 'q', sessionId: 'gone' });
+      assert.deepEqual(store.orphans({ project: 'p', session: 'live' }), []);
+      assert.deepEqual(store.orphans({ project: 'p', session: 'live', now: OLD }).map((i) => i.id), [item.id]);
+      assert.deepEqual(store.orphans({ project: 'p', session: 'gone', now: OLD }), []);
+    });
+
+    test('a chat that was seen recently keeps its work', () => {
+      const store = newStore();
+      answered(store, { sessionId: 'busy' });
+      store.touchSession({ id: 'busy', project: 'p', now: OLD - 1000 });
+      assert.deepEqual(store.orphans({ project: 'p', session: 'live', now: OLD }), []);
+    });
+
+    test('claiming moves the work to the new chat and records it, and only one chat wins', () => {
+      const store = newStore();
+      const item = answered(store, { sessionId: 'gone' });
+      store.touchSession({ id: 'new', project: 'p', chat: 'helper' });
+      const claimed = store.claim(item.id, 'new', { now: OLD });
+      assert.equal(claimed.sessionId, 'new');
+      assert.equal(claimed.chat, 'helper');
+      assert.ok(claimed.deliveredAt);
+      assert.equal(claimed.messages.at(-1).kind, 'handover');
+      assert.throws(() => store.claim(item.id, 'other', { now: OLD + 1 }), /already/);
+    });
+
+    test('the user can assign a chat, or leave it to any chat in the project', () => {
+      const store = newStore();
+      const item = answered(store, { sessionId: 'gone' });
+      store.touchSession({ id: 'new', project: 'p', chat: 'helper' });
+      const assigned = store.assign(item.id, { sessionId: 'new' });
+      assert.equal(assigned.chat, 'helper');
+      assert.equal(assigned.deliveredAt, null);
+      const open = store.assign(item.id, { anyChat: true });
+      assert.equal(open.sessionId, null);
+      assert.deepEqual(store.orphans({ project: 'p', session: 'x' }).map((i) => i.id), [item.id]);
+    });
+
+    test('an item can move to another project', () => {
+      const store = newStore();
+      const item = store.create({ title: 'Work', project: 'p' });
+      assert.equal(store.assign(item.id, { project: 'q' }).project, 'q');
+    });
+
+    test('merging projects moves the items and remembers the mapping for new ones', () => {
+      const store = newStore();
+      const old = store.create({ title: 'A', project: 'Portal' });
+      store.touchSession({ id: 's', project: 'Portal' });
+      store.mergeProject('Portal', 'Licensing Portal');
+      assert.equal(store.get(old.id).project, 'Licensing Portal');
+      assert.equal(store.create({ title: 'B', project: 'Portal' }).project, 'Licensing Portal');
+      assert.equal(store.directory().sessions[0].project, 'Licensing Portal');
+      assert.deepEqual(store.directory().projects, ['Licensing Portal']);
+      assert.throws(() => store.mergeProject('X', 'X'), /different/);
+    });
+
+    test('sessions and mappings survive a restart', () => {
+      const file = path.join(tempDir(), 'items.json');
+      const first = new Store(file);
+      first.touchSession({ id: 's', project: 'p', chat: 'c' });
+      first.mergeProject('a', 'b');
+      first.flush();
+      const second = new Store(file);
+      assert.equal(second.directory().sessions[0].chat, 'c');
+      assert.equal(second.create({ title: 'T', project: 'a' }).project, 'b');
+    });
+  });
+
   test('items survive a restart', () => {
     const file = path.join(tempDir(), 'items.json');
     const first = new Store(file);
@@ -275,6 +354,17 @@ describe('server', () => {
     await call('POST', `/api/items/${item.id}/answer`, { headers: human(), body: { decision: 'comment', comment: 'ok' } });
     assert.equal((await call('POST', `/api/items/${item.id}/progress`, { headers: human(), body: { text: 'x' } })).status, 403);
     assert.equal((await call('POST', `/api/items/${item.id}/progress`, { headers: agent, body: { text: 'Working' } })).status, 200);
+  });
+
+  test('assigning and merging are the browser\'s, claiming is the chat\'s', async () => {
+    const item = await create({ title: 'Move me', project: 'alpha' });
+    assert.equal((await call('POST', `/api/items/${item.id}/assign`, { headers: agent, body: { project: 'beta' } })).status, 403);
+    assert.equal((await call('POST', `/api/items/${item.id}/assign`, { headers: human(), body: { project: 'beta' } })).json().item.project, 'beta');
+    assert.equal((await call('POST', '/api/projects/merge', { headers: agent, body: { from: 'beta', to: 'gamma' } })).status, 403);
+    assert.equal((await call('POST', '/api/projects/merge', { headers: human(), body: { from: 'beta', to: 'gamma' } })).status, 200);
+    assert.equal((await call('GET', '/api/directory', { headers: agent })).status, 403);
+    assert.ok((await call('GET', '/api/directory', { headers: { Cookie: human().Cookie } })).json().projects.includes('gamma'));
+    assert.equal((await call('POST', `/api/items/${item.id}/claim`, { headers: human(), body: { sessionId: 's' } })).status, 403);
   });
 
   test('a cross-site browser post is refused even with the cookie', async () => {
@@ -491,6 +581,25 @@ describe('end to end', () => {
       await cli('done', id, 'Colour changed and deployed');
     });
 
+    test('a chat in the project is told about work another chat dropped', async () => {
+      const posted = await run(process.execPath, [BIN, 'ask', 'Dropped work', '--project', 'handover'], { env: { ...env, ASKITO_SESSION: 'dead-chat' }, cwd: fakeHome });
+      const id = posted.stdout.trim();
+      await answerAsHuman(id, { decision: 'comment', comment: 'carry on' });
+      const assignAny = await fetch(`http://127.0.0.1:45991/api/items/${id}/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: `askito_ui=${fs.readFileSync(path.join(home, 'ui.token'), 'utf8').trim()}`, Origin: 'http://127.0.0.1:45991' },
+        body: JSON.stringify({ anyChat: true }),
+      });
+      assert.equal(assignAny.status, 200);
+      const live = { ...env, ASKITO_PROJECT: 'handover' };
+      const res = spawnSync(process.execPath, [BIN, 'hook', 'stop'], { input: JSON.stringify({ session_id: 'live-chat', last_assistant_message: 'Done.' }), env: live, cwd: fakeHome, encoding: 'utf8' });
+      assert.equal(res.status, 2);
+      assert.match(res.stderr, /claim/);
+      assert.match(res.stderr, /carry on/);
+      await run(process.execPath, [BIN, 'claim', id], { env: { ...env, ASKITO_SESSION: 'live-chat' }, cwd: fakeHome });
+      await run(process.execPath, [BIN, 'done', id, 'Finished it'], { env: { ...env, ASKITO_SESSION: 'live-chat' }, cwd: fakeHome });
+    });
+
     test('broken input never blocks a tool', () => {
       const res = spawnSync(process.execPath, [BIN, 'hook', 'block-question'], { input: 'not json', env, cwd: fakeHome, encoding: 'utf8' });
       assert.equal(res.status, 0);
@@ -519,7 +628,7 @@ describe('end to end', () => {
     assert.equal(init.result.protocolVersion, '2025-06-18');
 
     const list = await session.call('tools/list', {});
-    assert.deepEqual(list.result.tools.map((tool) => tool.name), ['askito_ask', 'askito_wait', 'askito_pickup', 'askito_ack', 'askito_reply', 'askito_progress', 'askito_done']);
+    assert.deepEqual(list.result.tools.map((tool) => tool.name), ['askito_ask', 'askito_wait', 'askito_pickup', 'askito_ack', 'askito_reply', 'askito_claim', 'askito_progress', 'askito_done']);
 
     const asked = await session.call('tools/call', { name: 'askito_ask', arguments: { title: 'From MCP', project: 'demo', kind: 'approval' } });
     const id = asked.result.content[0].text.match(/id: (\w+)/)[1];

@@ -136,6 +136,7 @@ This rule is mandatory and takes priority over any habit or other instruction to
 - Keep working on whatever does not depend on the answer.
 - At session start run \`~/.askito/bin/askito pickup\` for answers given after a chat ended, and \`ack\` the ones that are yours. If it shows \`key: first-run-broadcast\`, follow "First run" in the guide below.
 - The user must be able to see what came of every answer. Run \`~/.askito/bin/askito progress ID "what you are doing"\` as soon as you start on it, and \`~/.askito/bin/askito done ID "what you did"\` when finished.
+- If you are told no chat is following an answer in your project, take it over with \`~/.askito/bin/askito claim ID\` and see it through.
 - If askito fails, ask in the chat and say so.
 
 Full guide: \`~/.askito/app/skill/SKILL.md\`.`);

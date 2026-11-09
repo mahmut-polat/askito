@@ -61,6 +61,10 @@ Read `comment` even when there is a decision. It can change what the decision me
 - Starting on the answer: `~/.askito/bin/askito progress ID "What you are doing"`. Do this straight away, and again during long work.
 - Finished: `~/.askito/bin/askito done ID "What you did"`. The note is required, because it is the result the user reads.
 
+## Taking over dropped work
+
+A chat can end before it collects an answer. When you are told no chat is following an answer in your project, run `~/.askito/bin/askito claim ID`, act on it if you can, and report with `progress` and `done`. If it is not something you can do, say so in `done`.
+
 ## When a session starts
 
 Run `~/.askito/bin/askito pickup`. It lists answers no chat has collected for this project, which happens when the user answers after a chat has ended. For each one that belongs to your work, act on it and run `~/.askito/bin/askito ack ID`. Leave the others alone, since another chat may be waiting for them.

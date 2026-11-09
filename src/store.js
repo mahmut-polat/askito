@@ -4,6 +4,8 @@ import fs from 'node:fs';
 
 export const KINDS = ['question', 'approval', 'task'];
 export const FIRST_RUN_KEY = 'first-run-broadcast';
+// An answer nobody has picked up for this long may go to another chat.
+const ORPHAN_MS = 10 * 60 * 1000;
 
 const DECISIONS = {
   question: ['option', 'comment'],
@@ -75,6 +77,8 @@ export class Store extends EventEmitter {
     this.setMaxListeners(0);
     this.file = file;
     this.items = new Map();
+    this.sessions = new Map();
+    this.projectMap = {};
     this.timer = null;
     this.load();
   }
@@ -88,7 +92,10 @@ export class Store extends EventEmitter {
       throw err;
     }
     try {
-      for (const item of JSON.parse(raw).items) this.items.set(item.id, item);
+      const parsed = JSON.parse(raw);
+      for (const item of parsed.items) this.items.set(item.id, item);
+      for (const session of parsed.sessions ?? []) this.sessions.set(session.id, session);
+      this.projectMap = parsed.projectMap ?? {};
     } catch {
       // Keep the unreadable file for recovery instead of overwriting it.
       fs.renameSync(this.file, `${this.file}.corrupt-${Date.now()}`);
@@ -100,7 +107,7 @@ export class Store extends EventEmitter {
     clearTimeout(this.timer);
     this.timer = null;
     const tmp = `${this.file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ version: 1, items: [...this.items.values()] }), { mode: 0o600 });
+    fs.writeFileSync(tmp, JSON.stringify({ version: 1, items: [...this.items.values()], sessions: [...this.sessions.values()], projectMap: this.projectMap }), { mode: 0o600 });
     // On Windows, antivirus and indexers can hold the target open for a moment.
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -115,8 +122,12 @@ export class Store extends EventEmitter {
 
   changed(type, item) {
     item.updatedAt = new Date().toISOString();
-    this.timer ??= setTimeout(() => this.flush(), 30);
+    this.persist();
     this.emit('change', { type, item });
+  }
+
+  persist() {
+    this.timer ??= setTimeout(() => this.flush(), 30);
   }
 
   get(id) {
@@ -149,6 +160,9 @@ export class Store extends EventEmitter {
       sessionId: text(input.sessionId, 'sessionId', LIMITS.meta),
       key: text(input.key, 'key', LIMITS.meta),
     };
+
+    fields.project = this.projectMap[fields.project] ?? fields.project;
+    this.touchSession({ id: fields.sessionId, project: fields.project, chat: fields.chat, agent: fields.agent });
 
     // A retrying agent must not create a second copy of the same request.
     if (fields.key) {
@@ -262,11 +276,95 @@ export class Store extends EventEmitter {
     return item;
   }
 
+  touchSession({ id, project, chat, agent, now = Date.now() }) {
+    if (!id) return;
+    const session = this.sessions.get(id) ?? { id };
+    this.sessions.set(id, {
+      ...session,
+      project: project ?? session.project ?? null,
+      chat: chat ?? session.chat ?? null,
+      agent: agent ?? session.agent ?? null,
+      lastSeen: new Date(now).toISOString(),
+    });
+    this.persist();
+  }
+
+  isAlive(sessionId, now = Date.now()) {
+    const lastSeen = this.sessions.get(sessionId)?.lastSeen;
+    return Boolean(lastSeen) && now - Date.parse(lastSeen) < ORPHAN_MS;
+  }
+
+  owesReport(item) {
+    if (item.status !== 'answered') return false;
+    return !item.deliveredAt || !item.messages.some((m) => m.from === 'agent' && m.kind !== 'handover' && m.at >= item.answer.at);
+  }
+
+  isOrphan(item, { now = Date.now(), isWaited = () => false } = {}) {
+    if (!this.owesReport(item) || isWaited(item.id)) return false;
+    if (!item.sessionId) return true;
+    return now - Date.parse(item.answer.at) >= ORPHAN_MS && !this.isAlive(item.sessionId, now);
+  }
+
+  orphans({ project, session, now, isWaited }) {
+    return this.list({ project }).filter((i) => i.sessionId !== session && this.isOrphan(i, { now, isWaited }));
+  }
+
+  claim(id, sessionId, { now = Date.now() } = {}) {
+    const item = this.get(id);
+    if (!sessionId) throw invalid('sessionId is required');
+    if (item.status !== 'answered') throw new HttpError(409, 'not_answered', 'only an answered item can be taken over');
+    if (item.sessionId && item.sessionId !== sessionId && this.isAlive(item.sessionId, now)) throw new HttpError(409, 'taken', 'another chat already has this');
+    this.touchSession({ id: sessionId, project: item.project, now });
+    const at = new Date().toISOString();
+    item.sessionId = sessionId;
+    item.chat = this.sessions.get(sessionId).chat ?? item.chat;
+    item.deliveredAt ??= at;
+    item.messages.push({ from: 'agent', kind: 'handover', text: item.chat, at });
+    this.changed('claim', item);
+    return item;
+  }
+
+  assign(id, input) {
+    const item = this.get(id);
+    if (input.project !== undefined) item.project = text(input.project, 'project', LIMITS.meta, { required: true });
+    if (input.anyChat || input.sessionId) {
+      const session = input.anyChat ? null : this.sessions.get(input.sessionId);
+      if (!input.anyChat && !session) throw new HttpError(404, 'not_found', 'that chat is not known');
+      item.sessionId = session?.id ?? null;
+      if (session?.chat) item.chat = session.chat;
+      item.deliveredAt = null;
+      item.messages.push({ from: 'human', kind: 'assigned', text: session?.chat ?? null, at: new Date().toISOString() });
+    }
+    this.changed('assign', item);
+    return item;
+  }
+
+  mergeProject(rawFrom, rawTo) {
+    const from = text(rawFrom, 'from', LIMITS.meta, { required: true });
+    const to = text(rawTo, 'to', LIMITS.meta, { required: true });
+    if (from === to) throw invalid('the two projects must be different');
+    for (const item of this.items.values()) if (item.project === from) item.project = to;
+    for (const session of this.sessions.values()) if (session.project === from) session.project = to;
+    for (const key of Object.keys(this.projectMap)) if (this.projectMap[key] === from) this.projectMap[key] = to;
+    this.projectMap[from] = to;
+    this.persist();
+    this.emit('change', { type: 'merge', item: {} });
+  }
+
+  directory() {
+    const projects = new Set([...this.items.values()].map((i) => i.project));
+    for (const session of this.sessions.values()) if (session.project) projects.add(session.project);
+    return {
+      projects: [...projects].sort((a, b) => a.localeCompare(b)),
+      sessions: [...this.sessions.values()].sort((a, b) => b.lastSeen.localeCompare(a.lastSeen)),
+    };
+  }
+
   followups(sessionId) {
     const answered = this.list().filter((i) => i.sessionId === sessionId && i.status === 'answered');
     return {
       uncollected: answered.filter((i) => !i.deliveredAt),
-      unreported: answered.filter((i) => i.deliveredAt && !i.messages.some((m) => m.from === 'agent' && m.at >= i.answer.at)),
+      unreported: answered.filter((i) => i.deliveredAt && this.owesReport(i)),
     };
   }
 

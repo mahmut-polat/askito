@@ -65,12 +65,21 @@ async function sessionContext(input) {
 
 async function followUps(input) {
   if (!input.session_id) return '';
-  const { uncollected, unreported } = await api('GET', `/api/followups?session=${encodeURIComponent(input.session_id)}`);
+  const here = detectContext(input.cwd || process.cwd());
+  const query = new URLSearchParams({ session: input.session_id, project: here.project });
+  if (here.chat) query.set('chat', here.chat);
+  if (here.agent) query.set('agent', here.agent);
+  const { uncollected, unreported, orphans } = await api('GET', `/api/followups?${query}`);
   const parts = [];
   if (uncollected.length) parts.push(`The user answered. Act on these and ack them:\n\n${uncollected.map(formatItem).join('\n\n')}`);
   if (unreported.length) {
     parts.push(
       localize(`You received these answers and the user cannot see what you did about them. Run \`~/.askito/bin/askito progress ID "what you are doing"\` now and \`~/.askito/bin/askito done ID "what you did"\` when finished:\n\n${unreported.map(formatItem).join('\n\n')}`),
+    );
+  }
+  if (orphans.length) {
+    parts.push(
+      localize(`No chat is following these answers in this project, so the work is stuck. Take over each one you can act on with \`~/.askito/bin/askito claim ID\`, then report with \`progress\` and \`done\`:\n\n${orphans.map(formatItem).join('\n\n')}`),
     );
   }
   return parts.join('\n\n');

@@ -448,6 +448,50 @@ kbd {
   overflow-wrap: anywhere;
 }
 
+.assign {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.assign label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.assign select,
+.merge select {
+  min-height: 32px;
+  max-inline-size: 240px;
+  padding-inline: var(--space-1);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.merge {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.merge summary {
+  cursor: pointer;
+}
+
+.merge label {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.merge select {
+  inline-size: 100%;
+}
+
 .tag {
   font-weight: 600;
   color: var(--kind);

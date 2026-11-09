@@ -30,7 +30,7 @@ const KIND_ICON = {
 
 const app = document.getElementById('app');
 const live = document.getElementById('live');
-const state = { items: [], project: null, tab: 'waiting', selected: null, query: '', busy: null, error: null, sessionLost: false };
+const state = { directory: { projects: [], sessions: [] }, mergeOpen: false, mergeFrom: '', mergeTo: '', items: [], project: null, tab: 'waiting', selected: null, query: '', busy: null, error: null, sessionLost: false };
 const drafts = new Map();
 let catalog = {};
 let language = 'en';
@@ -254,11 +254,12 @@ async function request(method, url, body) {
 
 async function refresh() {
   try {
-    const { items } = await request('GET', '/api/items');
-    const next = JSON.stringify(items);
+    const [{ items }, directory] = await Promise.all([request('GET', '/api/items'), request('GET', '/api/directory')]);
+    const next = JSON.stringify([items, directory]);
     if (next === snapshot && !state.sessionLost) return;
     snapshot = next;
     state.items = items;
+    state.directory = directory;
     keepSelection();
     render();
   } catch {
@@ -439,8 +440,9 @@ function answerLine(item) {
 
 function chatState(item) {
   if (item.status !== 'answered' || !item.answer) return null;
+  if (item.orphaned) return { label: t('stateOrphaned'), tone: 'warn' };
   if (!item.deliveredAt) return { label: t('stateNotReceived'), tone: 'warn' };
-  const last = item.messages.filter((m) => m.from === 'agent' && m.at >= item.answer.at).at(-1);
+  const last = item.messages.filter((m) => m.from === 'agent' && m.kind !== 'handover' && m.at >= item.answer.at).at(-1);
   const minutes = Math.floor((Date.now() - Date.parse(last?.at ?? item.deliveredAt)) / 60000);
   if (minutes >= STALL_MINUTES) return { label: t('stateStalled', { mins: minutes }), tone: 'warn', note: last?.text };
   if (last) return { label: t('stateWorking'), tone: 'ok', note: last.text };
@@ -450,6 +452,79 @@ function chatState(item) {
 function resultOf(item) {
   if (item.status !== 'done') return null;
   return item.messages.filter((m) => m.kind === 'result' || m.from === 'agent').at(-1)?.text ?? null;
+}
+
+function assignControls(item) {
+  const { projects, sessions } = state.directory;
+  const others = sessions.filter((session) => session.id !== item.sessionId);
+  const ordered = [...others.filter((session) => session.project === item.project), ...others.filter((session) => session.project !== item.project)];
+  const chatName = (session) => `${session.project ? `${projectLabel(session.project)}: ` : ''}${session.chat || session.id.slice(0, 8)} (${relative(session.lastSeen)})`;
+  return h(
+    'div',
+    { class: 'assign' },
+    h(
+      'label',
+      {},
+      t('assignProject'),
+      h('select', { onchange: (event) => act(item.id, 'assign', { project: event.target.value }) }, projects.map((name) => h('option', { value: name, selected: name === item.project }, projectLabel(name)))),
+    ),
+    h(
+      'label',
+      {},
+      t('assignChat'),
+      h(
+        'select',
+        {
+          onchange: (event) => {
+            const { value } = event.target;
+            if (value) act(item.id, 'assign', value === 'any' ? { anyChat: true } : { sessionId: value });
+          },
+        },
+        h('option', { value: '', selected: true }, item.chat || t('chatUnknown')),
+        h('option', { value: 'any' }, t('assignAnyChat')),
+        ordered.map((session) => h('option', { value: session.id }, chatName(session))),
+      ),
+    ),
+  );
+}
+
+function mergeControls() {
+  const { projects } = state.directory;
+  if (projects.length < 2) return null;
+  const from = projects.includes(state.mergeFrom) ? state.mergeFrom : projects[0];
+  const to = projects.includes(state.mergeTo) && state.mergeTo !== from ? state.mergeTo : projects.find((name) => name !== from);
+  const select = (value, field) =>
+    h(
+      'select',
+      {
+        onchange: (event) => {
+          state[field] = event.target.value;
+          render();
+        },
+      },
+      projects.map((name) => h('option', { value: name, selected: name === value }, projectLabel(name))),
+    );
+  return h(
+    'details',
+    { class: 'merge', open: state.mergeOpen, ontoggle: (event) => (state.mergeOpen = event.target.open) },
+    h('summary', {}, t('mergeTitle')),
+    h('label', {}, t('mergeFrom'), select(from, 'mergeFrom')),
+    h('label', {}, t('mergeTo'), select(to, 'mergeTo')),
+    h(
+      'button',
+      {
+        type: 'button',
+        class: 'btn',
+        onclick: async () => {
+          if (!window.confirm(t('mergeConfirm', { from, to }))) return;
+          await request('POST', '/api/projects/merge', { from, to });
+          state.project = null;
+          await refresh();
+        },
+      },
+      t('mergeAction'),
+    ),
+  );
 }
 
 function resolvedControls(item) {
@@ -470,12 +545,16 @@ function resolvedControls(item) {
   return [answerLine(item), h('div', { class: 'actions' }, button(item, { label: t('restore'), action: 'reopen', body: {} }))];
 }
 
-const AGENT_EVENT = { progress: 'eventProgress', result: 'eventResult', question: 'eventQuestion' };
+const AGENT_EVENT = { handover: 'eventHandover', progress: 'eventProgress', result: 'eventResult', question: 'eventQuestion' };
 
 function timeline(item) {
   const events = [{ at: item.createdAt, label: t('eventAsked') }];
   for (const message of item.messages) {
     if (message.from === 'human') {
+      if (message.kind === 'assigned') {
+        events.push({ at: message.at, label: t('eventAssigned'), text: message.text });
+        continue;
+      }
       const decided = message.decision ? `: ${t(`decision_${message.decision}`)}` : '';
       const picked = message.choices?.length ? ` (${message.choices.join(', ')})` : '';
       events.push({ at: message.at, label: `${t('youLabel')}${decided}${picked}`, text: message.text });
@@ -548,6 +627,7 @@ function renderRow(item, index) {
         timeline(item),
         item.status === 'open' ? h('p', { class: `note${item.agentWaiting ? ' live' : ''}` }, item.agentWaiting ? t('chatWaiting') : t('chatAway')) : null,
         item.status === 'open' ? openControls(item, row) : resolvedControls(item),
+        item.status === 'open' || item.status === 'answered' ? assignControls(item) : null,
         error,
       )
     : null;
@@ -593,6 +673,7 @@ function renderSide() {
     h(
       'div',
       { class: 'side-foot' },
+      mergeControls(),
       h('div', { class: 'shortcuts' }, shortcutHint()),
       h(
         'label',
