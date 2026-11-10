@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import { parseArgs } from 'node:util';
+import { cloudStatus, DEFAULT_SERVER, login, logout } from './cloud.js';
 import { api, ensureServer, formatItem, inboxUrl, status, stopServer, waitForItems } from './client.js';
 import { detectContext } from './context.js';
 import { runHook } from './hooks.js';
@@ -21,6 +22,10 @@ Set up
   askito open [--url]             Open the inbox in your browser, or print its link
   askito status | start | stop
   askito alias "Name" [path]      Show a repository under a friendlier project name
+
+Online access (optional)
+  askito login [--server URL]     Pair this computer with askito.net to answer from any device
+  askito logout                   Unpair it and stop syncing
 
 For agents
   askito ask "Title" [options]    Post a question
@@ -62,6 +67,7 @@ const OPTIONS = {
   'dry-run': { type: 'boolean' },
   url: { type: 'boolean' },
   purge: { type: 'boolean' },
+  server: { type: 'string' },
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean', short: 'v' },
 };
@@ -156,7 +162,28 @@ export async function main(argv) {
     case 'status': {
       const current = await status();
       print(current?.name ? `running, version ${current.version}, pid ${current.pid}` : 'not running');
+      const cloud = cloudStatus();
+      const last = cloud.lastSyncAt ? `last ran ${cloud.lastSyncAt}` : 'not run yet';
+      print(cloud.on ? `online sync: on with ${cloud.server}, ${last}` : 'online sync: off');
+      if (cloud.lastError) print(`last sync error: ${cloud.lastError}`);
       return current?.name ? 0 : 1;
+    }
+    case 'login': {
+      const result = await login({ server: values.server ?? DEFAULT_SERVER, print, openBrowser });
+      print(`online sync is on${result.email ? ` for ${result.email}` : ''}`);
+      // A running server only starts syncing after a restart.
+      if ((await status())?.name) {
+        await stopServer();
+        await ensureServer();
+      }
+      return 0;
+    }
+    case 'logout': {
+      const result = await logout();
+      if (!result.signedIn) print('online sync was already off');
+      else if (result.revoked) print('signed out. This computer is removed from your account and sync is off');
+      else print(`sync is off here, but the server could not be told (${result.error}). Remove this computer on your account page`);
+      return 0;
     }
     case 'open': {
       await ensureServer();

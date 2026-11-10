@@ -110,13 +110,27 @@ askito reply ID "Follow-up, puts the item back in Waiting"
 askito done ID "What happened"
 askito list --status open
 askito alias "Friendly name" /path/to/repo
+askito login             Pair with askito.net to answer from other devices
+askito logout
 ```
 
 `--wait` and `wait` exit with 0 when answered, 3 when you removed the item, and 4 on timeout. Projects come from the git repository, and every worktree of a repository lands in the same project. Run `askito --help` for the rest.
 
+## Online access
+
+You can also answer from your phone or another computer through askito.net. This is optional and off until you turn it on:
+
+```bash
+askito login
+```
+
+It prints a code and opens askito.net, where you sign in and approve this computer after checking that the code matches. The device token is saved in `~/.askito/cloud.json`, readable only by your user. From then on the local server sends each new or changed item to askito.net and, every 15 seconds, collects the answers you gave there. An online answer releases the waiting chat the same way an answer in the local inbox does. If you already answered an item here, the local answer stands and the online one is dropped.
+
+Only the item itself is sent: kind, title, body, options, project, chat name, status, answer and thread. Folder paths, session ids and keys stay on this machine. `askito status` shows whether sync is on and when it last ran. `askito logout` removes this computer and its items from your account and deletes the token. Use `--server URL` with `login` to pair with another instance of the service.
+
 ## Security and privacy
 
-Everything stays on your machine, in `~/.askito`. There is no account, telemetry or cloud service.
+Everything stays on your machine, in `~/.askito`. There is no telemetry. Without `askito login` the app sends no request to any server.
 
 The server listens on `127.0.0.1` only. It refuses unknown `Host` headers, which blocks DNS rebinding, and refuses browser posts from any other origin. Agents and the browser use separate secrets, and the answer routes accept only the browser's, so an agent calling the API cannot approve its own request. Everything an agent writes is rendered as text under a strict content security policy.
 

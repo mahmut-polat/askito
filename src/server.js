@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { Sync } from './cloud.js';
 import { notify } from './notify.js';
 import { agentToken, ensureHome, filePath, getPort, PACKAGE_ROOT, readConfig, uiToken, VERSION } from './paths.js';
 import { HttpError, isResolved, Store } from './store.js';
@@ -321,7 +322,11 @@ export function serve() {
   const config = readConfig();
   const quiet = config.notifications === false || process.env.ASKITO_NO_NOTIFY === '1';
 
+  // Sync runs only after askito login. Without cloud.json nothing leaves the machine.
+  const sync = new Sync({ store });
+
   const stop = () => {
+    sync.stop();
     store.flush();
     try {
       fs.unlinkSync(filePath('server.pid'));
@@ -346,6 +351,7 @@ export function serve() {
   });
   server.listen(port, '127.0.0.1', () => {
     fs.writeFileSync(filePath('server.pid'), String(process.pid), { mode: 0o600 });
+    sync.start();
   });
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);

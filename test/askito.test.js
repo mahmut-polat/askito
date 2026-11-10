@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
-import { execFile, spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { formatItem } from '../src/client.js';
+import { Sync } from '../src/cloud.js';
 import { notifyCommand } from '../src/notify.js';
 import { createApp } from '../src/server.js';
 import { Store } from '../src/store.js';
@@ -782,5 +783,309 @@ describe('setup', () => {
   test('an unknown tool name is an error', async () => {
     const { cli } = sandbox();
     await assert.rejects(cli('setup', '--tools', 'nothing'), /unknown tool/);
+  });
+});
+
+// A stand-in for askito.net that follows docs/SYNC.md in the askito-cloud repository.
+function fakeCloud() {
+  const state = { requests: [], items: new Map(), changes: [], tokens: new Set(), polls: 0 };
+  let base = '';
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+    });
+    req.on('end', () => {
+      const url = new URL(req.url, 'http://fake');
+      const body = raw ? JSON.parse(raw) : undefined;
+      state.requests.push({ method: req.method, path: url.pathname, headers: req.headers, body });
+      const send = (status, payload) => {
+        res.writeHead(status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(payload));
+      };
+      if (req.headers.origin) return send(403, { error: 'bad_origin', message: 'unexpected Origin header' });
+      const route = `${req.method} ${url.pathname}`;
+      if (route === 'POST /api/pair/start') {
+        return send(201, { deviceCode: 'device-code-secret', userCode: 'CSDE-UQSH', verifyUrl: `${base}/pair?code=CSDE-UQSH`, expiresIn: 30, interval: 0.05 });
+      }
+      if (route === 'POST /api/pair/poll') {
+        state.polls += 1;
+        if (body.deviceCode !== 'device-code-secret' || state.polls > 2) return send(404, { error: 'expired', message: 'expired' });
+        if (state.polls === 1) return send(202, { status: 'pending' });
+        state.tokens.add('askd_login_token');
+        return send(200, { status: 'approved', token: 'askd_login_token', deviceId: 'dev1' });
+      }
+      const token = (req.headers.authorization ?? '').replace(/^Bearer /, '');
+      if (!state.tokens.has(token)) return send(401, { error: 'unauthorized', message: 'missing or revoked device token' });
+      if (route === 'GET /api/sync/me') return send(200, { deviceId: 'dev1', name: 'test', email: 'person@example.com' });
+      if (route === 'DELETE /api/sync/me') {
+        state.tokens.delete(token);
+        return send(200, { ok: true });
+      }
+      if (route === 'POST /api/sync/items') {
+        if (body.items.length > 50) return send(400, { error: 'invalid_request', message: 'at most 50 items per request' });
+        for (const item of body.items) state.items.set(item.id, item);
+        return send(200, { stored: body.items.length });
+      }
+      if (route === 'GET /api/sync/changes') {
+        const cursor = Number(url.searchParams.get('cursor'));
+        const limit = Number(url.searchParams.get('limit') ?? 100);
+        const waiting = state.changes.filter((c) => c.seq > cursor && c.applied === undefined);
+        const page = waiting.slice(0, limit).map(({ applied, ...change }) => change);
+        return send(200, { changes: page, cursor: page.at(-1)?.seq ?? cursor, more: waiting.length > limit });
+      }
+      if (route === 'POST /api/sync/ack') {
+        let acked = 0;
+        for (const ack of body.acks) {
+          const change = state.changes.find((c) => c.seq === ack.seq && c.applied === undefined);
+          if (!change) continue;
+          change.applied = ack.applied;
+          acked += 1;
+        }
+        return send(200, { acked });
+      }
+      return send(404, { error: 'not_found', message: 'unknown route' });
+    });
+  });
+  return {
+    state,
+    server,
+    get base() {
+      return base;
+    },
+    async start() {
+      await new Promise((r) => server.listen(0, '127.0.0.1', r));
+      base = `http://127.0.0.1:${server.address().port}`;
+    },
+    queue(change) {
+      const seq = state.changes.length + 1;
+      state.changes.push({ seq, at: new Date().toISOString(), ...change });
+      return seq;
+    },
+    calls: (method, route) => state.requests.filter((r) => r.method === method && r.path === route),
+  };
+}
+
+describe('online sync', () => {
+  const cloud = fakeCloud();
+  const home = tempDir();
+  const previousHome = process.env.ASKITO_HOME;
+  const stores = [];
+
+  before(async () => {
+    await cloud.start();
+    process.env.ASKITO_HOME = home;
+  });
+
+  after(() => {
+    if (previousHome === undefined) delete process.env.ASKITO_HOME;
+    else process.env.ASKITO_HOME = previousHome;
+    for (const s of stores) clearTimeout(s.timer);
+    cloud.server.closeAllConnections();
+    cloud.server.close();
+  });
+
+  function paired(token) {
+    cloud.state.tokens.add(token);
+    fs.rmSync(path.join(home, 'sync-state.json'), { force: true });
+    fs.writeFileSync(path.join(home, 'cloud.json'), JSON.stringify({ server: cloud.base, token }), { mode: 0o600 });
+    const store = newStore();
+    stores.push(store);
+    const sync = new Sync({ store, log: () => {} });
+    assert.equal(sync.load(), true);
+    return { store, sync };
+  }
+
+  describe('login and logout from the command line', () => {
+    const loginHome = tempDir();
+    const fakeHome = tempDir();
+    const env = { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome, ASKITO_HOME: loginHome, ASKITO_PORT: '45996', ASKITO_NO_NOTIFY: '1', PATH: path.dirname(process.execPath) };
+    const cli = (...args) => run(process.execPath, [BIN, ...args], { env, cwd: fakeHome });
+    const statusText = () => cli('status').then((r) => r.stdout, (err) => err.stdout);
+
+    test('login prints the code and link, stores the token with mode 0600 and never prints it', async () => {
+      const { stdout } = await cli('login', '--server', cloud.base);
+      assert.match(stdout, /Code: CSDE-UQSH/);
+      assert.ok(stdout.includes(`${cloud.base}/pair?code=CSDE-UQSH`));
+      assert.match(stdout, /online sync is on for person@example.com/);
+      assert.ok(!stdout.includes('askd_login_token'));
+      assert.ok(!stdout.includes('device-code-secret'));
+      const file = path.join(loginHome, 'cloud.json');
+      assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).token, 'askd_login_token');
+      if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+      assert.equal(cloud.calls('POST', '/api/pair/start')[0].body.name.length > 0, true);
+      assert.ok(cloud.state.requests.every((r) => r.headers.origin === undefined));
+      assert.match(await statusText(), /online sync: on with http:\/\/127\.0\.0\.1/);
+    });
+
+    test('logout revokes the token on the server and deletes it here', async () => {
+      const { stdout } = await cli('logout');
+      assert.match(stdout, /signed out/);
+      const revoke = cloud.calls('DELETE', '/api/sync/me').at(-1);
+      assert.equal(revoke.headers.authorization, 'Bearer askd_login_token');
+      assert.ok(!cloud.state.tokens.has('askd_login_token'));
+      assert.ok(!fs.existsSync(path.join(loginHome, 'cloud.json')));
+      assert.match(await statusText(), /online sync: off/);
+    });
+
+    test('a plain http server other than this machine is refused', async () => {
+      await assert.rejects(cli('login', '--server', 'http://askito.example'), /must start with https/);
+    });
+  });
+
+  test('push sends the contract fields of items that changed, and nothing else', async () => {
+    const { store, sync } = paired('askd_push');
+    const item = store.create({ title: 'Which cache?', options: ['Redis', 'SQLite'], project: 'p', cwd: '/secret/path', sessionId: 's1', key: 'k1' });
+    const before_ = cloud.calls('POST', '/api/sync/items').length;
+    await sync.syncOnce();
+    const pushed = cloud.state.items.get(item.id);
+    assert.equal(pushed.title, 'Which cache?');
+    assert.equal(pushed.status, 'open');
+    assert.deepEqual(pushed.options.map((o) => o.label), ['Redis', 'SQLite']);
+    for (const field of ['cwd', 'sessionId', 'key']) assert.equal(field in pushed, false);
+    assert.equal(cloud.calls('POST', '/api/sync/items').length, before_ + 1);
+
+    await sync.syncOnce();
+    assert.equal(cloud.calls('POST', '/api/sync/items').length, before_ + 1, 'nothing changed, nothing sent');
+
+    store.later(item.id, true);
+    await sync.syncOnce();
+    assert.equal(cloud.calls('POST', '/api/sync/items').length, before_ + 2);
+    assert.ok(cloud.state.items.get(item.id).laterAt);
+  });
+
+  test('an online answer goes through the store and releases a waiting chat', async () => {
+    const { store, sync } = paired('askd_pull');
+    const tokens = { agent: 'agent-secret', ui: 'ui-secret' };
+    const probe = http.createServer();
+    await new Promise((r) => probe.listen(0, '127.0.0.1', r));
+    const { port } = probe.address();
+    await new Promise((r) => probe.close(r));
+    const { server } = createApp({ store, port, tokens, onShutdown: () => {}, sendNotification: () => {} });
+    await new Promise((r) => server.listen(port, '127.0.0.1', r));
+    try {
+      const item = store.create({ title: 'Pick a colour', options: ['Red', 'Blue'] });
+      await sync.syncOnce();
+      const waiting = fetch(`http://127.0.0.1:${port}/api/wait?ids=${item.id}&timeout=20`, { headers: { Authorization: `Bearer ${tokens.agent}` } }).then((r) => r.json());
+      await new Promise((r) => setTimeout(r, 200));
+      const seq = cloud.queue({ itemId: item.id, action: 'answer', answer: { decision: 'option', choices: ['2'], comment: 'from my phone', at: new Date().toISOString() } });
+      await sync.syncOnce();
+      const result = await waiting;
+      assert.equal(result.ready[0].status, 'answered');
+      assert.deepEqual(result.ready[0].answer.choices, ['Blue']);
+      assert.equal(result.ready[0].answer.comment, 'from my phone');
+      assert.equal(cloud.state.changes.find((c) => c.seq === seq).applied, true);
+      assert.equal(cloud.state.items.get(item.id).status, 'answered');
+      const order = cloud.state.requests.map((r) => `${r.method} ${r.path}`);
+      assert.ok(order.lastIndexOf('POST /api/sync/items') < order.lastIndexOf('POST /api/sync/ack'), 'the answered item is pushed before the ack');
+    } finally {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+  test('dismiss and later from online use the store too', async () => {
+    const { store, sync } = paired('askd_actions');
+    const a = store.create({ title: 'Drop this' });
+    const b = store.create({ title: 'Not today' });
+    cloud.queue({ itemId: a.id, action: 'dismiss', answer: { decision: 'dismissed', choices: [], comment: 'not needed', at: new Date().toISOString() } });
+    cloud.queue({ itemId: b.id, action: 'later', later: true });
+    await sync.syncOnce();
+    assert.equal(store.get(a.id).status, 'dismissed');
+    assert.equal(store.get(a.id).answer.comment, 'not needed');
+    assert.equal(store.get(b.id).status, 'open');
+    assert.ok(store.get(b.id).laterAt);
+  });
+
+  test('an answer given locally first wins, and the local item is pushed before the ack', async () => {
+    const { store, sync } = paired('askd_conflict');
+    const item = store.create({ kind: 'approval', title: 'Deploy?' });
+    await sync.syncOnce();
+    store.answer(item.id, { decision: 'rejected', comment: 'said no in the terminal' });
+    const seq = cloud.queue({ itemId: item.id, action: 'answer', answer: { decision: 'approved', choices: [], comment: null, at: new Date().toISOString() } });
+    const missing = cloud.queue({ itemId: 'gone123', action: 'answer', answer: { decision: 'approved', choices: [], comment: null, at: new Date().toISOString() } });
+    await sync.syncOnce();
+    assert.equal(store.get(item.id).answer.decision, 'rejected');
+    assert.equal(cloud.state.changes.find((c) => c.seq === seq).applied, false);
+    assert.equal(cloud.state.changes.find((c) => c.seq === missing).applied, false);
+    assert.equal(cloud.state.items.get(item.id).status, 'answered');
+    const order = cloud.state.requests.map((r) => `${r.method} ${r.path}`);
+    assert.ok(order.lastIndexOf('POST /api/sync/items') < order.lastIndexOf('POST /api/sync/ack'));
+  });
+
+  test('a revoked token is forgotten and sync stops', async () => {
+    const { store, sync } = paired('askd_revoked');
+    cloud.state.tokens.delete('askd_revoked');
+    store.create({ title: 'Anyone there?' });
+    await sync.tick();
+    assert.equal(sync.cloud, null);
+    assert.equal(sync.timer, null);
+    assert.ok(!fs.existsSync(path.join(home, 'cloud.json')));
+  });
+
+  test('without login the server sends no network request, and with it the loop runs', async () => {
+    const dir = tempDir();
+    const spy = path.join(dir, 'spy.mjs');
+    fs.writeFileSync(
+      spy,
+      [
+        "import fs from 'node:fs';",
+        "import net from 'node:net';",
+        'const record = (line) => fs.appendFileSync(process.env.SPY_LOG, `${line}\\n`);',
+        'const connect = net.Socket.prototype.connect;',
+        'net.Socket.prototype.connect = function (...args) {',
+        "  record(`connect ${JSON.stringify(args[0]?.port ?? args[0])}`);",
+        '  return connect.apply(this, args);',
+        '};',
+        'const realFetch = globalThis.fetch;',
+        'globalThis.fetch = (...args) => {',
+        '  record(`fetch ${args[0]}`);',
+        '  return realFetch(...args);',
+        '};',
+      ].join('\n'),
+    );
+
+    async function serveWithSpy(serveHome, port) {
+      const log = path.join(dir, `net-${port}.log`);
+      const child = spawn(process.execPath, ['--import', pathToFileURL(spy).href, BIN, 'serve'], {
+        env: { ...process.env, ASKITO_HOME: serveHome, ASKITO_PORT: String(port), ASKITO_NO_NOTIFY: '1', SPY_LOG: log },
+        stdio: 'ignore',
+      });
+      for (let i = 0; i < 50; i += 1) {
+        if (await fetch(`http://127.0.0.1:${port}/api/health`).then((r) => r.ok, () => false)) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      const agent = fs.readFileSync(path.join(serveHome, 'agent.token'), 'utf8').trim();
+      const res = await fetch(`http://127.0.0.1:${port}/api/items`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${agent}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Is anything sent?' }),
+      });
+      assert.equal(res.status, 201);
+      return {
+        log: () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : ''),
+        stop: () => new Promise((r) => {
+          child.on('exit', r);
+          child.kill();
+        }),
+      };
+    }
+
+    const offline = await serveWithSpy(tempDir(), 45994);
+    await new Promise((r) => setTimeout(r, 2000));
+    const offlineLog = offline.log();
+    await offline.stop();
+    assert.equal(offlineLog, '', 'no outgoing connection without login');
+
+    const onlineHome = tempDir();
+    cloud.state.tokens.add('askd_spy');
+    fs.writeFileSync(path.join(onlineHome, 'cloud.json'), JSON.stringify({ server: cloud.base, token: 'askd_spy' }), { mode: 0o600 });
+    const pushesBefore = cloud.calls('POST', '/api/sync/items').length;
+    const online = await serveWithSpy(onlineHome, 45995);
+    for (let i = 0; i < 50 && cloud.calls('POST', '/api/sync/items').length === pushesBefore; i += 1) await new Promise((r) => setTimeout(r, 100));
+    const onlineLog = online.log();
+    await online.stop();
+    assert.ok(cloud.calls('POST', '/api/sync/items').length > pushesBefore, 'the loop pushed the new item');
+    assert.match(onlineLog, /fetch http:\/\/127\.0\.0\.1/, 'the spy sees requests when they happen');
   });
 });
