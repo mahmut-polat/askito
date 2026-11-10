@@ -4,20 +4,23 @@ const clip = (value, max) => (value.length > max ? `${value.slice(0, max - 1)}â€
 
 // Title and body come from agents, so they are passed as arguments or
 // environment values and never interpolated into a script.
-export function notify(rawTitle, rawBody) {
+export function notifyCommand(platform, rawTitle, rawBody) {
   const title = clip(rawTitle, 80);
   const body = clip(rawBody, 180);
-  const ignore = () => {};
-  if (process.platform === 'darwin') {
-    const script = ['on run argv', 'display notification (item 2 of argv) with title (item 1 of argv)', 'end run'];
-    execFile('osascript', [...script.flatMap((line) => ['-e', line]), title, body], ignore);
-  } else if (process.platform === 'win32') {
+  // On macOS an osascript notification belongs to Script Editor, which opens
+  // on every click. The inbox page shows browser notifications there instead.
+  if (platform === 'darwin') return null;
+  if (platform === 'win32') {
     const script =
       'Add-Type -AssemblyName System.Windows.Forms;' +
       '$n=New-Object System.Windows.Forms.NotifyIcon;$n.Icon=[System.Drawing.SystemIcons]::Information;$n.Visible=$true;' +
       '$n.ShowBalloonTip(6000,$env:ASKITO_N_TITLE,$env:ASKITO_N_BODY,"Info");Start-Sleep 7;$n.Dispose()';
-    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { env: { ...process.env, ASKITO_N_TITLE: title, ASKITO_N_BODY: body } }, ignore);
-  } else {
-    execFile('notify-send', ['--', title, body], ignore);
+    return ['powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { env: { ...process.env, ASKITO_N_TITLE: title, ASKITO_N_BODY: body } }];
   }
+  return ['notify-send', ['--', title, body], {}];
+}
+
+export function notify(title, body) {
+  const command = notifyCommand(process.platform, title, body);
+  if (command) execFile(command[0], command[1], command[2], () => {});
 }

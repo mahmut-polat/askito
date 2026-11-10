@@ -252,12 +252,48 @@ async function request(method, url, body) {
   return res.json();
 }
 
+// Browser notifications replace the macOS ones, which opened Script Editor.
+const seenOpen = new Set();
+let firstLoad = true;
+
+function notifyNew(items) {
+  const fresh = items.filter((item) => item.status === 'open' && !item.laterAt && !seenOpen.has(item.id));
+  for (const item of fresh) seenOpen.add(item.id);
+  if (firstLoad || !document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
+  for (const item of fresh.slice(0, 3)) {
+    const note = new Notification(`Ask·ito: ${projectLabel(item.project)}`, { body: item.title, tag: item.id });
+    note.onclick = () => {
+      window.focus();
+      state.selected = item.id;
+      render();
+    };
+  }
+}
+
+function notificationButton() {
+  if (!('Notification' in window) || Notification.permission !== 'default') return null;
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn notify-on',
+      onclick: async () => {
+        await Notification.requestPermission();
+        render();
+      },
+    },
+    t('notificationsOn'),
+  );
+}
+
 async function refresh() {
   try {
     const [{ items }, directory] = await Promise.all([request('GET', '/api/items'), request('GET', '/api/directory')]);
     const next = JSON.stringify([items, directory]);
     if (next === snapshot && !state.sessionLost) return;
     snapshot = next;
+    notifyNew(items);
+    firstLoad = false;
     state.items = items;
     state.directory = directory;
     keepSelection();
@@ -705,6 +741,7 @@ function renderSide() {
       'div',
       { class: 'side-foot' },
       mergeControls(),
+      notificationButton(),
       h('div', { class: 'shortcuts' }, shortcutHint()),
       h(
         'label',

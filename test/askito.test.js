@@ -8,6 +8,7 @@ import { after, before, describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { formatItem } from '../src/client.js';
+import { notifyCommand } from '../src/notify.js';
 import { createApp } from '../src/server.js';
 import { Store } from '../src/store.js';
 
@@ -259,6 +260,20 @@ describe('store', () => {
     const store = new Store(file);
     assert.equal(store.list().length, 0);
     assert.ok(fs.readdirSync(dir).some((name) => name.startsWith('items.json.corrupt-')));
+  });
+});
+
+describe('notifications', () => {
+  test('macOS gets no desktop notifier, because osascript opens Script Editor', () => {
+    assert.equal(notifyCommand('darwin', 'T', 'B'), null);
+  });
+
+  test('Linux and Windows pass agent text as arguments or environment, never as script', () => {
+    assert.deepEqual(notifyCommand('linux', 'T', 'B').slice(0, 2), ['notify-send', ['--', 'T', 'B']]);
+    const [command, args, options] = notifyCommand('win32', '$(evil)', 'B');
+    assert.equal(command, 'powershell');
+    assert.doesNotMatch(args.join(' '), /evil/);
+    assert.equal(options.env.ASKITO_N_TITLE, '$(evil)');
   });
 });
 
