@@ -140,7 +140,7 @@ This rule is mandatory and takes priority over any habit or other instruction to
 - Write the title and body for someone who has not seen this chat.${languageLine}
 - One item per question, approval or task. Never bundle several into one item: the user answers, sets aside and tracks each one on its own.
 - Every page the user will want to open again (a published artifact, report, preview, shared document) goes to the Links tab: \`~/.askito/bin/askito link "Title" URL\` or \`askito_link\`. In Claude Code, published artifacts are added by a hook; check they show up.
-- Every file you make for the user on this computer (video, PDF, Markdown report, image, export) goes to the Files tab the same way: \`~/.askito/bin/askito link "Title" /full/path/to/file\`. A click there opens the file or its folder.
+- Every file you make for the user on this computer (video, PDF, Markdown report, image, export) goes to the Files tab the same way: \`~/.askito/bin/askito link "Title" /full/path/to/file\`. A click there opens the file or its folder. Many files from one job (a batch of videos, screenshots, exports) go in as their folder, once, never file by file.
 - Wait with a background command if your tool wakes you when it exits. Otherwise use \`askito_wait\` or \`~/.askito/bin/askito wait ID --timeout 100\` and repeat on exit code 4.
 - Keep working on whatever does not depend on the answer.
 - At session start run \`~/.askito/bin/askito pickup\` for answers given after a chat ended, and \`ack\` the ones that are yours. If it shows \`key: first-run-broadcast\`, follow "First run" in the guide below.

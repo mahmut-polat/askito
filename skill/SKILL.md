@@ -77,6 +77,8 @@ Files on this computer go in the same way and land in the Files tab, where a cli
 ~/.askito/bin/askito link "Promo video, cut 3" ~/Projects/buki/out/promo-cut3.mp4 --body "60 s, with the Suno track"
 ```
 
+Many files from one job, such as a batch of videos or screenshots, go in as their folder, once: `askito link "Promo videos (29)" ~/Projects/buki/out/videos`. Thirty rows for one job bury everything else in the list.
+
 Scripts and apps (`.command`, `.sh`, `.app`, `.exe` and similar) are only ever shown in their folder, never run.
 
 MCP clients use `askito_link`. In Claude Code a hook adds every Artifact publish by itself and tells you so; if you see no such note, add the link yourself. If you keep a Markdown register of pages, `askito links import FILE` adds every address in its tables.
