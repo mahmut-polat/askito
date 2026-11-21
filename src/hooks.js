@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import { api, ensureServer, formatItem } from './client.js';
 import { detectContext } from './context.js';
+import { accountName, artifactFromHook } from './links.js';
 import { localize } from './setup.js';
 
 const BLOCK = 2;
@@ -106,6 +107,19 @@ export async function runHook(name) {
       if (endsOnQuestion(lastAssistantText(input))) return refuse(`Your reply ends on a question. ${RULE} Post it there now and end your turn without asking it.`);
       const owed = await followUps(input);
       return owed ? refuse(owed) : 0;
+    }
+    case 'artifact': {
+      // Every published artifact lands in the Links tab, so none gets lost.
+      const link = artifactFromHook(input);
+      if (!link) return 0;
+      const here = detectContext(input.cwd || process.cwd());
+      try {
+        await api('POST', '/api/links', { ...link, project: here.project, chat: here.chat, account: accountName(), sessionId: input.session_id });
+      } catch {
+        return 0;
+      }
+      process.stdout.write(context({ event: 'PostToolUse', body: `askito: "${link.title}" is in the Links tab of the inbox.` }));
+      return 0;
     }
     case 'session':
       process.stdout.write(context({ event: 'SessionStart', body: [await sessionContext(input), await followUps(input)].filter(Boolean).join('\n\n') }));

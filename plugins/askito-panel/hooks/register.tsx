@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Catalog, InboxItem } from '../types'
+import type { Catalog, InboxItem, LinkEntry } from '../types'
 
 const PANE = 'askito-inbox'
 const POLL_MS = 4000
@@ -23,6 +23,10 @@ const KIND_ICON = {
     color: '#a678e2',
     shapes: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
   },
+  link: {
+    color: '#2fa38a',
+    shapes: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  },
 } as const
 
 // Translucent, so one project keeps its color on the light and the dark theme.
@@ -33,7 +37,7 @@ function badgeColor(project: string) {
   return BADGE_COLORS[sum % BADGE_COLORS.length]
 }
 
-function kindSvg(kind: InboxItem['kind']) {
+function kindSvg(kind: InboxItem['kind'] | 'link') {
   const { color, shapes } = KIND_ICON[kind]
   return `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="${color}" fill-opacity="0.18"/><g transform="translate(6 6) scale(0.8333)" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shapes}</g></svg>`
 }
@@ -47,6 +51,7 @@ const sortMode = atom({ plugin: 'askito-panel', key: 'sort' } as const, 'newest'
 const catalog = atom({ plugin: 'askito-panel', key: 'catalog' } as const, {}, { shape: 'catalog-1' })
 const status = atom({ plugin: 'askito-panel', key: 'status' } as const, 'loading', { shape: 'status-1' })
 const error = atom({ plugin: 'askito-panel', key: 'error' } as const, false, { shape: 'error-1' })
+const links = atom({ plugin: 'askito-panel', key: 'links' } as const, [], { shape: 'links-1' })
 
 const STALL_MINUTES = 30
 const TONE = { warn: '#e06070', ok: '#2fa36b', info: undefined } as const
@@ -77,10 +82,10 @@ function dayLabel(key: string) {
 }
 
 // Items arrive sorted, so groups and days keep the order of their first item.
-function groupItems(items: InboxItem[]) {
-  const projects = new Map<string, Map<string, InboxItem[]>>()
+function groupItems<T extends { project: string; createdAt: string }>(items: T[]) {
+  const projects = new Map<string, Map<string, T[]>>()
   for (const item of items) {
-    const days = projects.get(item.project) ?? new Map<string, InboxItem[]>()
+    const days = projects.get(item.project) ?? new Map<string, T[]>()
     const key = dayKey(item.createdAt)
     days.set(key, [...(days.get(key) ?? []), item])
     projects.set(item.project, days)
@@ -171,6 +176,12 @@ function sortItems(list: InboxItem[], mode: string) {
   return [...list].sort(compare)
 }
 
+function sortLinks<T extends { project: string; createdAt: string }>(list: T[], mode: string) {
+  const newest = (a: T, b: T) => b.createdAt.localeCompare(a.createdAt)
+  const compare = mode === 'oldest' ? (a: T, b: T) => newest(b, a) : mode === 'project' ? (a: T, b: T) => a.project.localeCompare(b.project) || newest(a, b) : newest
+  return [...list].sort(compare)
+}
+
 async function loadCatalog($: EngineInterface, link: Connection) {
   const wanted = link.language ?? new Intl.DateTimeFormat().resolvedOptions().locale.slice(0, 2)
   const language = ['en', 'tr'].includes(wanted) ? wanted : 'en'
@@ -196,6 +207,9 @@ async function refresh($: EngineInterface) {
       ? (JSON.parse(answered.text) as { items: InboxItem[] }).items
       : await read($, agents)
     if (JSON.stringify(await read($, agents)) !== JSON.stringify(nextAgents)) await update($, agents, () => nextAgents)
+    const linked = await request($, link, '/api/links')
+    const nextLinks = linked.ok ? ((JSON.parse(linked.text) as { links?: LinkEntry[] }).links ?? []) : await read($, links)
+    if (JSON.stringify(await read($, links)) !== JSON.stringify(nextLinks)) await update($, links, () => nextLinks)
     if ((await read($, status)) !== 'ready') await update($, status, () => 'ready')
   } catch {
     if ((await read($, status)) !== 'offline') await update($, status, () => 'offline')
@@ -235,6 +249,7 @@ export const register: Register = on => {
     const picked = await read($, selected)
     const chosen = await read($, filter)
     const others = await read($, agents)
+    const saved = await read($, links)
     const sorting = await read($, sortMode)
     const mode = await read($, view)
     const words = await read($, catalog)
@@ -251,7 +266,8 @@ export const register: Register = on => {
       )
     }
     const source = mode === 'agents' ? others : list
-    const projects = [...new Set(source.map(item => item.project))].sort((a, b) => a.localeCompare(b))
+    const linkSource = saved.map(entry => ({ ...entry, createdAt: entry.updatedAt }))
+    const projects = [...new Set((mode === 'links' ? linkSource : source).map(item => item.project))].sort((a, b) => a.localeCompare(b))
     const active = chosen && projects.includes(chosen) ? chosen : null
     const shown = active ? source.filter(item => item.project === active) : source
     // Nothing opens by itself: answering one item must not unfold the next.
@@ -359,7 +375,7 @@ export const register: Register = on => {
       </Box>
     )
 
-    const viewChip = (value: 'waiting' | 'agents', label: string, count: number) => (
+    const viewChip = (value: 'waiting' | 'agents' | 'links', label: string, count: number) => (
       <Button key={`view-${value}`} variant={mode === value ? 'primary' : 'secondary'} onPress={() => void update($, view, () => value)}>
         {label} <Text dimColor>{count}</Text>
       </Button>
@@ -414,25 +430,77 @@ export const register: Register = on => {
       )
     }
 
+    const linkRow = (entry: LinkEntry, index: number) => (
+      <Box flexDirection="row" gap="sm" alignItems="flex-start">
+        <Box width={3} flexShrink={0} paddingTop="xs">
+          <Text tabular weight="semibold" dimColor>
+            {index}
+          </Text>
+        </Box>
+        <Svg source={kindSvg('link')} alt={t('tabLinks')} width={32} height={32} />
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} gap="xs">
+          <Link href={entry.url} label={entry.title} />
+          <Text size="caption" dimColor>
+            <Text size="caption" weight="medium" backgroundColor={badgeColor(entry.project)}>
+              {` ${projectName(entry.project)} `}
+            </Text>
+            {`${entry.account ? `  ${entry.account}` : ''}${entry.chat ? `  ${entry.chat}` : ''}  ${stamp(entry.updatedAt)}`}
+          </Text>
+          {entry.body ? (
+            <Text size="caption" dimColor>
+              {entry.body}
+            </Text>
+          ) : null}
+        </Box>
+      </Box>
+    )
+    const shownLinks = sortLinks(active ? linkSource.filter(entry => entry.project === active) : linkSource, sorting)
+    const linkGroups = groupItems(shownLinks)
+    // Built only when shown, so the waiting list keeps its own numbering.
+    const linksBody = mode !== 'links' ? null : shownLinks.length ? (
+      linkGroups.map(group => (
+        <Box flexDirection="column" gap="md">
+          {projects.length > 1 && !active ? <Text weight="bold">{projectName(group.project)}</Text> : null}
+          {group.days.map(day => (
+            <Box flexDirection="column" gap="md">
+              <Text size="caption" weight="semibold" dimColor>
+                {day.label}
+              </Text>
+              {day.items.map(entry => linkRow(entry, (number += 1)))}
+            </Box>
+          ))}
+        </Box>
+      ))
+    ) : (
+      <Box flexDirection="column" gap="xs">
+        <Text weight="semibold">{t('emptyLinksTitle')}</Text>
+        <Text size="caption" dimColor>
+          {t('emptyLinksBody')}
+        </Text>
+      </Box>
+    )
+    const heading = mode === 'links' ? 'headLinks' : mode === 'agents' ? 'headAgents' : 'headWaiting'
+
     return (
       <Box flexDirection="column" padding="md" gap="lg">
         <Box flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap="sm">
           <Box flexDirection="row" alignItems="center" gap="sm">
             <Text size="title" weight="bold" tabular>
-              {shown.length}
+              {mode === 'links' ? shownLinks.length : shown.length}
             </Text>
-            <Text size="heading">{t(mode === 'agents' ? 'headAgents' : 'headWaiting')}</Text>
+            <Text size="heading">{t(heading)}</Text>
           </Box>
           {inbox}
         </Box>
         <Box flexDirection="row" flexWrap="wrap" gap="xs">
           {viewChip('waiting', t('tabWaiting'), list.length)}
           {viewChip('agents', t('tabAgents'), others.length)}
+          {viewChip('links', t('tabLinks'), saved.length)}
         </Box>
         {projects.length > 1 ? (
           <Box flexDirection="row" flexWrap="wrap" gap="xs">
-            {chip('all', t('allProjects'), source.length, null)}
-            {projects.map(name => chip(name, projectName(name), source.filter(item => item.project === name).length, name))}
+            {chip('all', t('allProjects'), mode === 'links' ? linkSource.length : source.length, null)}
+            {projects.map(name => chip(name, projectName(name), (mode === 'links' ? linkSource : source).filter(item => item.project === name).length, name))}
           </Box>
         ) : null}
         <Select
@@ -442,7 +510,9 @@ export const register: Register = on => {
           options={['newest', 'oldest', 'urgent', 'project'].map(value => ({ value, label: t(`sort_${value}`) }))}
           onSelect={value => void update($, sortMode, () => value)}
         />
-        {shown.length ? (
+        {mode === 'links' ? (
+          linksBody
+        ) : shown.length ? (
           groups.map(group => (
             <Box flexDirection="column" gap="md">
               {projects.length > 1 && !active ? (

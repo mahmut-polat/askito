@@ -98,5 +98,14 @@
   "sort_urgent": "Urgent first",
   "sort_project": "By project",
   "notificationsOn": "Turn on notifications",
-  "unsorted": "Unsorted"
+  "unsorted": "Unsorted",
+  "tabLinks": "Links",
+  "headLinks": "links",
+  "emptyLinksTitle": "No links yet",
+  "emptyLinksBody": "Artifacts, reports and previews your agents publish collect here. Click one to open it in a new tab.",
+  "copyLink": "Copy link",
+  "removeLink": "Remove from list",
+  "linkRemoved": "Link removed from the list",
+  "opensNewTab": "opens in a new tab",
+  "linkAccount": "account: {name}"
 }

@@ -19,6 +19,8 @@
   --kind-approval-soft: #f4e8d0;
   --kind-task: #6a2fa0;
   --kind-task-soft: #efe5fa;
+  --kind-link: #0f6e5a;
+  --kind-link-soft: #dcf1ea;
   --row-num: 24px;
   --row-icon: 36px;
   --font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -55,6 +57,8 @@
   --kind-approval-soft: #3a2e15;
   --kind-task: #c9a2f0;
   --kind-task-soft: #33234a;
+  --kind-link: #6fd3b8;
+  --kind-link-soft: #163a31;
   color-scheme: dark;
 }
 
@@ -253,8 +257,15 @@ kbd {
 
 .tabs {
   display: flex;
-  flex-wrap: wrap;
   gap: var(--space-4);
+  /* One row that scrolls; wrapped tab rows are hard to follow. */
+  max-inline-size: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tabs .tab {
+  flex: none;
 }
 
 .tab {
@@ -344,6 +355,52 @@ kbd {
 .row.kind-task {
   --kind: var(--kind-task);
   --kind-soft: var(--kind-task-soft);
+}
+
+.row.kind-link {
+  --kind: var(--kind-link);
+  --kind-soft: var(--kind-link-soft);
+}
+
+.row-head.link-head {
+  grid-template-columns: var(--row-num) var(--row-icon) minmax(0, 1fr) auto;
+  cursor: default;
+}
+
+.link-title {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.link-title:hover,
+.link-title:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.link-actions .btn {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  font-size: 13px;
+}
+
+.link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: end;
+}
+
+@media (width < 640px) {
+  .row-head.link-head {
+    grid-template-columns: var(--row-num) var(--row-icon) minmax(0, 1fr);
+  }
+
+  .link-actions {
+    grid-column: 3;
+    justify-content: start;
+  }
 }
 
 .row-head {

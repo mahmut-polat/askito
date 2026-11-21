@@ -5,6 +5,7 @@ import { cloudStatus, DEFAULT_SERVER, login, logout } from './cloud.js';
 import { api, ensureServer, formatItem, inboxUrl, status, stopServer, waitForItems } from './client.js';
 import { detectContext } from './context.js';
 import { runHook } from './hooks.js';
+import { parseLinkTable } from './links.js';
 import { runMcp } from './mcp.js';
 import { filePath, readConfig, VERSION, writeConfig } from './paths.js';
 import { serve } from './server.js';
@@ -45,6 +46,12 @@ For agents
   askito done ID "What you did"
   askito list [--status open|answered|done|dismissed] [--project NAME] [--json]
 
+Links (published artifacts, reports, previews the user opens again)
+  askito link "Title" URL [--body TEXT] [--project NAME] [--account NAME]
+  askito links [--project NAME] [--removed] [--json]
+  askito links import FILE         Add every address in a Markdown table
+  askito unlink ID|URL
+
 Exit codes for --wait and wait: 0 answered, 3 removed by the human, 4 timed out.
 `;
 
@@ -68,6 +75,8 @@ const OPTIONS = {
   url: { type: 'boolean' },
   purge: { type: 'boolean' },
   server: { type: 'string' },
+  account: { type: 'string' },
+  removed: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean', short: 'v' },
 };
@@ -228,6 +237,50 @@ export async function main(argv) {
       if (values.project) query.set('project', values.project);
       const { items } = await api('GET', `/api/items?${query}`);
       print(values.json ? JSON.stringify(items, null, 2) : items.map((i) => `${i.id}  ${i.status.padEnd(9)}  ${i.project}  ${i.title}`).join('\n') || 'empty');
+      return 0;
+    }
+    case 'link': {
+      const [title, url] = rest;
+      if (!title || !url) throw new Error('usage: askito link "Title" https://claude.ai/artifact/...');
+      const here = detectContext();
+      const { link } = await api('POST', '/api/links', {
+        title,
+        url,
+        body: readBody(values),
+        project: values.project ?? here.project,
+        chat: values.chat ?? here.chat,
+        account: values.account,
+        sessionId: here.session,
+      });
+      print(values.json ? JSON.stringify(link, null, 2) : `${link.updated ? 'updated' : 'added'}: ${link.id}  ${link.title}`);
+      return 0;
+    }
+    case 'links': {
+      if (rest[0] === 'import') {
+        if (!rest[1]) throw new Error('usage: askito links import FILE');
+        const rows = parseLinkTable(fs.readFileSync(rest[1], 'utf8'));
+        let added = 0;
+        for (const row of rows) {
+          const { link } = await api('POST', '/api/links', { ...row, project: values.project, account: row.account ?? values.account });
+          if (!link.updated) added += 1;
+        }
+        print(`${rows.length} links read, ${added} new`);
+        return 0;
+      }
+      const query = new URLSearchParams();
+      if (values.project) query.set('project', values.project);
+      if (values.removed) query.set('removed', '1');
+      const { links } = await api('GET', `/api/links?${query}`);
+      print(values.json ? JSON.stringify(links, null, 2) : links.map((l) => `${l.id}  ${l.project}  ${l.title}\n        ${l.url}`).join('\n') || 'no links');
+      return 0;
+    }
+    case 'unlink': {
+      if (!rest[0]) throw new Error('usage: askito unlink ID|URL');
+      const { links } = await api('GET', '/api/links');
+      const target = links.find((l) => l.id === rest[0] || l.url === rest[0]);
+      if (!target) throw new Error(`no link ${rest[0]}`);
+      await api('POST', `/api/links/${target.id}/remove`, {});
+      print(`removed: ${target.title}`);
       return 0;
     }
     case 'ack':

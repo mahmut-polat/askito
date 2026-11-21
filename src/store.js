@@ -79,6 +79,7 @@ export class Store extends EventEmitter {
     this.items = new Map();
     this.sessions = new Map();
     this.projectMap = {};
+    this.links = new Map();
     this.timer = null;
     this.load();
   }
@@ -96,6 +97,7 @@ export class Store extends EventEmitter {
       for (const item of parsed.items) this.items.set(item.id, item);
       for (const session of parsed.sessions ?? []) this.sessions.set(session.id, session);
       this.projectMap = parsed.projectMap ?? {};
+      for (const link of parsed.links ?? []) this.links.set(link.id, link);
     } catch {
       // Keep the unreadable file for recovery instead of overwriting it.
       fs.renameSync(this.file, `${this.file}.corrupt-${Date.now()}`);
@@ -107,7 +109,7 @@ export class Store extends EventEmitter {
     clearTimeout(this.timer);
     this.timer = null;
     const tmp = `${this.file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ version: 1, items: [...this.items.values()], sessions: [...this.sessions.values()], projectMap: this.projectMap }), { mode: 0o600 });
+    fs.writeFileSync(tmp, JSON.stringify({ version: 1, items: [...this.items.values()], sessions: [...this.sessions.values()], projectMap: this.projectMap, links: [...this.links.values()] }), { mode: 0o600 });
     // On Windows, antivirus and indexers can hold the target open for a moment.
     for (let attempt = 0; ; attempt += 1) {
       try {
@@ -339,12 +341,69 @@ export class Store extends EventEmitter {
     return item;
   }
 
+  // Links are pages the user will want to open again, such as published
+  // artifacts. Publishing the same address again updates its entry.
+  addLink(input) {
+    const url = text(input.url, 'url', 2000, { required: true });
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw invalid('url must be a full address such as https://claude.ai/artifact/...');
+    }
+    if (!['https:', 'http:'].includes(parsed.protocol)) throw invalid('url must start with https:// or http://');
+    const project = text(input.project, 'project', LIMITS.meta) ?? 'unsorted';
+    const fields = {
+      url: parsed.href,
+      title: text(input.title, 'title', LIMITS.title, { required: true }),
+      body: text(input.body, 'body', LIMITS.description),
+      project: this.projectMap[project] ?? project,
+      chat: text(input.chat, 'chat', LIMITS.meta),
+      account: text(input.account, 'account', LIMITS.meta),
+      sessionId: text(input.sessionId, 'sessionId', LIMITS.meta),
+    };
+    const now = new Date().toISOString();
+    const existing = [...this.links.values()].find((link) => link.url === fields.url);
+    if (existing) {
+      // A republish without a project or account keeps what the first one said.
+      for (const [key, value] of Object.entries(fields)) if (value !== null && !(key === 'project' && value === 'unsorted')) existing[key] = value;
+      existing.updatedAt = input.updatedAt ?? now;
+      existing.removedAt = null;
+      this.linksChanged();
+      return { ...existing, updated: true };
+    }
+    const link = { id: newId(), ...fields, createdAt: input.createdAt ?? now, updatedAt: input.updatedAt ?? input.createdAt ?? now, removedAt: null };
+    this.links.set(link.id, link);
+    this.linksChanged();
+    return link;
+  }
+
+  listLinks({ project, removed = false } = {}) {
+    return [...this.links.values()]
+      .filter((link) => Boolean(link.removedAt) === removed && (!project || link.project === project))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  removeLink(id, value = true) {
+    const link = this.links.get(id) ?? [...this.links.values()].find((entry) => entry.url === id);
+    if (!link) throw new HttpError(404, 'not_found', `no link with id ${id}`);
+    link.removedAt = value ? new Date().toISOString() : null;
+    this.linksChanged();
+    return link;
+  }
+
+  linksChanged() {
+    this.persist();
+    this.emit('change', { type: 'links', item: {} });
+  }
+
   mergeProject(rawFrom, rawTo) {
     const from = text(rawFrom, 'from', LIMITS.meta, { required: true });
     const to = text(rawTo, 'to', LIMITS.meta, { required: true });
     if (from === to) throw invalid('the two projects must be different');
     for (const item of this.items.values()) if (item.project === from) item.project = to;
     for (const session of this.sessions.values()) if (session.project === from) session.project = to;
+    for (const link of this.links.values()) if (link.project === from) link.project = to;
     for (const key of Object.keys(this.projectMap)) if (this.projectMap[key] === from) this.projectMap[key] = to;
     this.projectMap[from] = to;
     this.persist();
@@ -352,7 +411,7 @@ export class Store extends EventEmitter {
   }
 
   directory() {
-    const projects = new Set([...this.items.values()].map((i) => i.project));
+    const projects = new Set([...this.items.values(), ...this.links.values()].map((i) => i.project));
     for (const session of this.sessions.values()) if (session.project) projects.add(session.project);
     return {
       projects: [...projects].sort((a, b) => a.localeCompare(b)),

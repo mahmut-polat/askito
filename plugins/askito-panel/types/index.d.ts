@@ -21,6 +21,18 @@ export type InboxItem = {
   messages?: InboxMessage[]
 }
 
+export type LinkEntry = {
+  id: string
+  title: string
+  url: string
+  body: string | null
+  project: string
+  chat: string | null
+  account: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export type Catalog = Record<string, string>
 
 declare module 'claude-code' {
@@ -30,7 +42,8 @@ declare module 'claude-code' {
       selected: Shaped<string | null>
       filter: Shaped<string | null>
       agents: Shaped<InboxItem[]>
-      view: Shaped<'waiting' | 'agents'>
+      view: Shaped<'waiting' | 'agents' | 'links'>
+      links: Shaped<LinkEntry[]>
       sort: Shaped<string>
       catalog: Shaped<Catalog>
       status: Shaped<'loading' | 'ready' | 'offline'>

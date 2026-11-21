@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { formatItem } from '../src/client.js';
 import { Sync } from '../src/cloud.js';
+import { artifactFromHook, parseLinkTable } from '../src/links.js';
 import { notifyCommand } from '../src/notify.js';
 import { createApp } from '../src/server.js';
 import { Store } from '../src/store.js';
@@ -264,6 +265,89 @@ describe('store', () => {
   });
 });
 
+describe('links', () => {
+  test('publishing the same address again updates one entry instead of adding a second', () => {
+    const store = newStore();
+    const first = store.addLink({ title: 'Leaflet draft', url: 'https://claude.ai/artifact/AbC123', project: 'portal', account: 'admin' });
+    const again = store.addLink({ title: 'Leaflet final', url: 'https://claude.ai/artifact/AbC123' });
+    assert.equal(again.id, first.id);
+    assert.equal(again.updated, true);
+    assert.equal(again.title, 'Leaflet final');
+    // A republish from a place with no project keeps the project it had.
+    assert.equal(again.project, 'portal');
+    assert.equal(store.listLinks().length, 1);
+  });
+
+  test('only full web addresses are kept', () => {
+    const store = newStore();
+    assert.throws(() => store.addLink({ title: 'x', url: 'javascript:alert(1)' }), /https/);
+    assert.throws(() => store.addLink({ title: 'x', url: 'not a url' }), /full address/);
+    assert.throws(() => store.addLink({ url: 'https://example.com' }), /title is required/);
+  });
+
+  test('a removed link leaves the list, comes back when published again, and survives a restart', () => {
+    const file = path.join(tempDir(), 'items.json');
+    const store = new Store(file);
+    const link = store.addLink({ title: 'Report', url: 'https://claude.ai/artifact/Rep1' });
+    store.removeLink(link.id);
+    assert.equal(store.listLinks().length, 0);
+    assert.equal(store.listLinks({ removed: true }).length, 1);
+    store.addLink({ title: 'Report v2', url: 'https://claude.ai/artifact/Rep1' });
+    store.flush();
+    const reloaded = new Store(file);
+    assert.equal(reloaded.listLinks()[0].title, 'Report v2');
+  });
+
+  test('merging projects moves their links too', () => {
+    const store = newStore();
+    store.addLink({ title: 'Screens', url: 'https://claude.ai/artifact/S1', project: 'Portal-2' });
+    store.mergeProject('Portal-2', 'Licensing Portal');
+    clearTimeout(store.timer);
+    assert.equal(store.listLinks()[0].project, 'Licensing Portal');
+  });
+
+  test('a hand-kept Markdown register is read with its account and date columns', () => {
+    const rows = parseLinkTable(
+      [
+        '# Artifacts',
+        '',
+        '| Başlık | URL | Sahip hesap | Klasör | Son güncelleme |',
+        '|---|---|---|---|---|',
+        '| Leaflet 2 – A4 | https://claude.ai/artifact/SUW | admin | leaflet-2/ | 2026-11-17 |',
+        '| App screens | https://claude.ai/artifact/7vh | info | screens/ | 2026-11-20 23:40 |',
+        '| No address here | - | admin | x/ | 2026-11-01 |',
+        '',
+        'A note, and then rows with no header:',
+        '| Offer modal | https://claude.ai/artifact/Of1 | info@example.co.uk | modal/ | 2026-11-21 |',
+      ].join('\n'),
+    );
+    assert.equal(rows.length, 3);
+    assert.equal(rows[2].account, 'info');
+    assert.match(rows[2].updatedAt, /^2026-11-2[01]T/);
+    assert.deepEqual(
+      { title: rows[0].title, url: rows[0].url, account: rows[0].account },
+      { title: 'Leaflet 2 – A4', url: 'https://claude.ai/artifact/SUW', account: 'admin' },
+    );
+    assert.match(rows[1].updatedAt, /^2026-11-2[01]T/);
+  });
+
+  test('an Artifact publish becomes a link titled from the page, and other calls do not', () => {
+    const dir = tempDir();
+    fs.writeFileSync(path.join(dir, 'page.html'), '<!doctype html><title>Leaflet  Four</title><p>x</p>');
+    const publish = {
+      tool_name: 'Artifact',
+      cwd: dir,
+      tool_input: { file_path: 'page.html', description: 'Four pages' },
+      tool_response: [{ type: 'text', text: 'Published: https://claude.ai/code/artifact/9f2c-77 (private)' }],
+    };
+    assert.deepEqual(artifactFromHook(publish), { url: 'https://claude.ai/code/artifact/9f2c-77', title: 'Leaflet Four', body: 'Four pages' });
+    assert.equal(artifactFromHook({ ...publish, tool_input: { action: 'read', url: 'https://claude.ai/artifact/x1' } }), null);
+    assert.equal(artifactFromHook({ ...publish, tool_input: { ...publish.tool_input, asset: true } }), null);
+    assert.equal(artifactFromHook({ ...publish, tool_response: 'refused' }), null);
+    assert.equal(artifactFromHook({ ...publish, tool_name: 'Write' }), null);
+  });
+});
+
 describe('notifications', () => {
   test('macOS gets no desktop notifier, because osascript opens Script Editor', () => {
     assert.equal(notifyCommand('darwin', 'T', 'B'), null);
@@ -463,6 +547,19 @@ describe('server', () => {
     assert.equal((await call('GET', '/../package.json')).status, 404);
     assert.equal((await call('GET', '/items.json')).status, 404);
   });
+  test('links: agents add them, the page reads and removes them, strangers get nothing', async () => {
+    assert.equal((await call('GET', '/api/links')).status, 401);
+    const added = await call('POST', '/api/links', { headers: agent, body: { title: 'Deck', url: 'https://claude.ai/artifact/Dk1', project: 'p' } });
+    assert.equal(added.status, 201);
+    const { link } = added.json();
+    assert.equal((await call('POST', '/api/links', { headers: human(), body: { title: 'x', url: 'https://example.com' } })).status, 403);
+    const listed = (await call('GET', '/api/links', { headers: human() })).json().links;
+    assert.ok(listed.some((entry) => entry.id === link.id));
+    const badOrigin = await call('POST', `/api/links/${link.id}/remove`, { headers: { Cookie: human().Cookie, Origin: 'http://evil.example' }, body: {} });
+    assert.equal(badOrigin.status, 403);
+    assert.equal((await call('POST', `/api/links/${link.id}/remove`, { headers: human(), body: {} })).status, 200);
+    assert.ok(!(await call('GET', '/api/links', { headers: human() })).json().links.some((entry) => entry.id === link.id));
+  });
 });
 
 describe('end to end', () => {
@@ -563,6 +660,20 @@ describe('end to end', () => {
       assert.equal(hook('block-question', { tool_name: 'Bash', tool_input: {} }).status, 0);
     });
 
+    test('a published artifact lands in Links by itself, and the command line can add and remove one', async () => {
+      const res = hook('artifact', { tool_name: 'Artifact', cwd: fakeHome, tool_input: { title: 'Night report' }, tool_response: 'Published https://claude.ai/artifact/Night1' });
+      assert.equal(res.status, 0);
+      assert.match(JSON.parse(res.stdout).hookSpecificOutput.additionalContext, /Links/);
+      await cli('link', 'Leaflet 5', 'https://claude.ai/artifact/Lf5', '--project', 'demo');
+      const listed = JSON.parse((await cli('links', '--json')).stdout);
+      assert.deepEqual(listed.map((l) => l.title).sort(), ['Leaflet 5', 'Night report']);
+      await cli('unlink', 'https://claude.ai/artifact/Lf5');
+      assert.deepEqual(JSON.parse((await cli('links', '--json')).stdout).map((l) => l.title), ['Night report']);
+      const register = path.join(fakeHome, 'KAYIT.md');
+      fs.writeFileSync(register, '| Title | URL | Account |\n|---|---|---|\n| Deck | https://claude.ai/artifact/Dk9 | info |\n| Night report | https://claude.ai/artifact/Night1 | admin |\n');
+      assert.match((await cli('links', 'import', register)).stdout, /2 links read, 1 new/);
+    });
+
     test('a turn that ends on a question is sent back once', () => {
       assert.equal(hook('stop', { last_assistant_message: 'Tests pass.\n\nHangisini seçeyim?' }).status, 2);
       assert.equal(hook('stop', { last_assistant_message: 'Hangisini seçeyim?', stop_hook_active: true }).status, 0);
@@ -644,7 +755,7 @@ describe('end to end', () => {
     assert.equal(init.result.protocolVersion, '2025-06-18');
 
     const list = await session.call('tools/list', {});
-    assert.deepEqual(list.result.tools.map((tool) => tool.name), ['askito_ask', 'askito_wait', 'askito_pickup', 'askito_ack', 'askito_reply', 'askito_claim', 'askito_progress', 'askito_done']);
+    assert.deepEqual(list.result.tools.map((tool) => tool.name), ['askito_ask', 'askito_wait', 'askito_pickup', 'askito_ack', 'askito_reply', 'askito_claim', 'askito_progress', 'askito_done', 'askito_link']);
 
     const asked = await session.call('tools/call', { name: 'askito_ask', arguments: { title: 'From MCP', project: 'demo', kind: 'approval' } });
     const id = asked.result.content[0].text.match(/id: (\w+)/)[1];
@@ -749,6 +860,7 @@ describe('setup', () => {
     assert.match(JSON.stringify(installed.hooks.PreToolUse), /AskUserQuestion/);
     assert.match(JSON.stringify(installed.hooks.SessionStart), /compact/);
     assert.match(JSON.stringify(installed.hooks.UserPromptSubmit), /hook reminder/);
+    assert.match(JSON.stringify(installed.hooks.PostToolUse), /"matcher":"Artifact".*hook artifact/);
 
     await cli('setup');
     assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), installed);

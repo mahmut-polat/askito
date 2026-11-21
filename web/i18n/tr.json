@@ -98,5 +98,14 @@
   "sort_urgent": "Acil olanlar üstte",
   "sort_project": "Projeye göre",
   "notificationsOn": "Bildirimleri aç",
-  "unsorted": "Diğer"
+  "unsorted": "Diğer",
+  "tabLinks": "Bağlantılar",
+  "headLinks": "bağlantı",
+  "emptyLinksTitle": "Henüz bağlantı yok",
+  "emptyLinksBody": "Ajanların yayınladığı artifact, rapor ve önizlemeler burada toplanır. Tıklayınca yeni sekmede açılır.",
+  "copyLink": "Bağlantıyı kopyala",
+  "removeLink": "Listeden kaldır",
+  "linkRemoved": "Bağlantı listeden kaldırıldı",
+  "opensNewTab": "yeni sekmede açılır",
+  "linkAccount": "hesap: {name}"
 }

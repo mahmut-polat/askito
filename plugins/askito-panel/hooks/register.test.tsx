@@ -32,7 +32,7 @@ const ITEM = {
 
 type Fetch = { url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }
 
-async function start($: any, on: any, options: { installed?: boolean; items?: object[]; agents?: object[] } = {}) {
+async function start($: any, on: any, options: { installed?: boolean; items?: object[]; agents?: object[]; links?: object[] } = {}) {
   const sent: Fetch[] = []
   let open: object[] = options.items ?? [ITEM]
   on('command.register', () => ({ value: { command: 'askito-panel' } }))
@@ -52,7 +52,11 @@ async function start($: any, on: any, options: { installed?: boolean; items?: ob
       return { value: { status: 200, ok: true, headers: {}, text: '{}' } }
     }
     const list = e.url.includes('status=answered') ? (options.agents ?? []) : open
-    const text = e.url.includes('/i18n/') ? JSON.stringify(WORDS) : JSON.stringify({ items: list })
+    const text = e.url.includes('/i18n/')
+      ? JSON.stringify(WORDS)
+      : e.url.includes('/api/links')
+        ? JSON.stringify({ links: options.links ?? [] })
+        : JSON.stringify({ items: list })
     return { value: { status: 200, ok: true, headers: {}, text } }
   })
   await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
@@ -145,7 +149,8 @@ test('With chats shows whether the answer arrived and what the chat did', async 
 test('every row shows the date and time it was asked', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount(PANE)
-  expect((await ui.find({ type: 'Text', text: /Nov/ }))?.text).toMatch(/\d{1,2}:\d{2}/)
+  // The day heading also names the month, so look for the time itself.
+  expect((await ui.find({ type: 'Text', text: /Nov.*\d{1,2}:\d{2}/ }))?.text).toMatch(/9 Nov|Nov 9/)
   await ui.unmount()
 })
 
@@ -215,5 +220,16 @@ test('without askito the pane says so', async ($, on) => {
   await start($, on, { installed: false })
   const ui = await $.ui.mount(PANE)
   expect(await ui.find({ type: 'Text' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Links lists published pages, and each title opens its address', async ($, on) => {
+  const link = { id: 'lnk1', title: 'Leaflet 2 (A4)', url: 'https://claude.ai/artifact/abc', body: null, project: 'billing', chat: null, account: 'admin', createdAt: '2026-11-20T10:00:00.000Z', updatedAt: '2026-11-21T09:00:00.000Z' }
+  await start($, on, { items: [ITEM], links: [link] })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'view-links' })
+  const shown = (await ui.findAll({ type: 'Link' })).find((found: any) => found.props?.href === 'https://claude.ai/artifact/abc')
+  expect(shown?.props?.label).toBe('Leaflet 2 (A4)')
+  expect(await ui.find({ type: 'Text', text: /Run the migration/ })).toBeUndefined()
   await ui.unmount()
 })

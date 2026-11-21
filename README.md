@@ -50,6 +50,8 @@ Chats post three kinds of item:
 | Approval | Approve, Reject, or send a comment |
 | Your task | I did it, I can't do this, or send a comment |
 
+The Links tab keeps every page your chats published for you, such as artifacts, reports and previews. Click a title to open it in a new tab. In Claude Code a hook adds each published artifact by itself, and other tools add theirs with `askito link`. The same address published again updates its row, so the list does not fill with copies.
+
 Any item can be removed from the list, which also tells a waiting chat to drop the subject. Later takes an item off your Waiting list without closing it: the chat keeps waiting and the Later tab holds the item until you bring it back. Items move through five tabs: Waiting, Later, With chats, Done and Removed. You can reopen anything. The sidebar splits everything by project and counts what is waiting in each, and every row carries its project as a colored badge.
 
 Answered items show whether the chat received the answer, what it is doing and what came of it, with a timeline on each item. A chat that goes quiet for 30 minutes is flagged. In Claude Code, a hook keeps a chat from ending its turn while it owes a report on an answer. Every row shows the date and time it was asked, and the list is grouped by project and then by day, newest first unless you pick another sort. Nothing opens until you open it. If a chat has gone away, its answer is offered to any other chat working in that project, which can take it over, so work does not get stuck. You can also assign an item to a specific chat, move it to another project, and map one project name onto another under Map projects. Rows are numbered, and each has its own icon and color for its kind, so a question and a job for you look different at a glance. Each open item says whether its chat is waiting right now or will collect your answer the next time it runs. New items update the tab title. With the page open, a browser notification appears after you turn it on in the sidebar. Linux and Windows also get a desktop notification from the server. The page comes in English and Turkish, in light and dark. To add a language, drop a file in `web/i18n` and add one line each in `web/app.js` and `src/server.js`.
@@ -109,6 +111,9 @@ askito pickup
 askito reply ID "Follow-up, puts the item back in Waiting"
 askito done ID "What happened"
 askito list --status open
+askito link "Title" URL  Add a page to the Links tab (the same URL updates it)
+askito links             List them; askito links import FILE reads a Markdown table
+askito unlink ID
 askito alias "Friendly name" /path/to/repo
 askito login             Pair with askito.net to answer from other devices
 askito logout

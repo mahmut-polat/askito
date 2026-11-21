@@ -8,6 +8,7 @@ const TABS = [
   { id: 'agents', status: 'answered', label: 'tabAgents', head: 'headAgents', empty: 'emptyAgents' },
   { id: 'done', status: 'done', label: 'tabDone', head: 'headDone', empty: 'emptyDone' },
   { id: 'removed', status: 'dismissed', label: 'tabRemoved', head: 'headRemoved', empty: 'emptyRemoved' },
+  { id: 'links', links: true, label: 'tabLinks', head: 'headLinks', empty: 'emptyLinks' },
 ];
 const STALL_MINUTES = 30;
 const KIND_LABEL = { question: 'kindQuestion', approval: 'kindApproval', task: 'kindTask' };
@@ -26,11 +27,16 @@ const KIND_ICON = {
     ['circle', { cx: 12, cy: 8, r: 5 }],
     ['path', { d: 'M20 21a8 8 0 0 0-16 0' }],
   ],
+  link: [
+    ['path', { d: 'M15 3h6v6' }],
+    ['path', { d: 'M10 14 21 3' }],
+    ['path', { d: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' }],
+  ],
 };
 
 const app = document.getElementById('app');
 const live = document.getElementById('live');
-const state = { sort: 'newest', directory: { projects: [], sessions: [] }, mergeOpen: false, mergeFrom: '', mergeTo: '', items: [], project: null, tab: 'waiting', selected: null, query: '', busy: null, error: null, sessionLost: false };
+const state = { sort: 'newest', directory: { projects: [], sessions: [] }, mergeOpen: false, mergeFrom: '', mergeTo: '', items: [], links: [], project: null, tab: 'waiting', selected: null, query: '', busy: null, error: null, sessionLost: false };
 const drafts = new Map();
 let catalog = {};
 let language = 'en';
@@ -288,13 +294,14 @@ function notificationButton() {
 
 async function refresh() {
   try {
-    const [{ items }, directory] = await Promise.all([request('GET', '/api/items'), request('GET', '/api/directory')]);
-    const next = JSON.stringify([items, directory]);
+    const [{ items }, directory, { links }] = await Promise.all([request('GET', '/api/items'), request('GET', '/api/directory'), request('GET', '/api/links')]);
+    const next = JSON.stringify([items, directory, links]);
     if (next === snapshot && !state.sessionLost) return;
     snapshot = next;
     notifyNew(items);
     firstLoad = false;
     state.items = items;
+    state.links = links;
     state.directory = directory;
     keepSelection();
     render();
@@ -701,12 +708,88 @@ function renderRow(item, index) {
   return h('li', { class: `row kind-${item.kind}${isOpen ? ' is-open' : ''}`, 'data-item': item.id }, header, detail);
 }
 
+function visibleLinks() {
+  const query = state.query.trim().toLocaleLowerCase(language);
+  const links = state.links.filter((link) => {
+    if (state.project && link.project !== state.project) return false;
+    if (!query) return true;
+    return [link.title, link.body, link.url, link.chat, link.project, link.account].some((field) => field?.toLocaleLowerCase(language).includes(query));
+  });
+  const newest = (a, b) => b.updatedAt.localeCompare(a.updatedAt);
+  const compare = { newest, urgent: newest, oldest: (a, b) => newest(b, a), project: (a, b) => a.project.localeCompare(b.project, language) || newest(a, b) };
+  return links.sort(compare[state.sort] ?? newest).map((link) => ({ ...link, createdAt: link.updatedAt }));
+}
+
+async function removeLink(link) {
+  try {
+    await request('POST', `/api/links/${link.id}/remove`, {});
+    live.textContent = t('linkRemoved');
+  } catch {
+    state.error = { id: link.id, message: state.sessionLost ? t('errorSession') : t('errorGeneric') };
+  }
+  await refresh();
+}
+
+function renderLinkRow(link, index) {
+  let host = '';
+  try {
+    host = new URL(link.url).host;
+  } catch {
+    // The server only keeps full addresses, so this stays empty at worst.
+  }
+  const copy = h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn copy',
+      onclick: async (event) => {
+        const control = event.currentTarget;
+        await navigator.clipboard.writeText(link.url);
+        control.textContent = t('copied');
+        setTimeout(() => {
+          control.textContent = t('copyLink');
+        }, 1500);
+      },
+    },
+    t('copyLink'),
+  );
+  return h(
+    'li',
+    { class: 'row kind-link', 'data-link': link.id },
+    h(
+      'div',
+      { class: 'row-head link-head' },
+      h('span', { class: 'row-num' }, String(index + 1)),
+      kindIcon('link'),
+      h(
+        'span',
+        { class: 'row-text' },
+        h('a', { class: 'row-title link-title', href: link.url, target: '_blank', rel: 'noopener noreferrer' }, link.title, h('span', { class: 'sr-only' }, ` (${t('opensNewTab')})`)),
+        h(
+          'span',
+          { class: 'meta' },
+          h('span', { class: `badge badge-${projectHue(link.project)}` }, projectLabel(link.project)),
+          link.account ? h('span', { class: 'tag' }, t('linkAccount', { name: link.account })) : null,
+          link.chat ? h('span', {}, link.chat) : null,
+          h('span', {}, host),
+          h('time', { datetime: link.updatedAt }, `${stamp(link.updatedAt)} (${relative(link.updatedAt)})`),
+        ),
+        link.body ? h('span', { class: 'row-note' }, link.body) : null,
+      ),
+      h('span', { class: 'link-actions' }, copy, h('button', { type: 'button', class: 'btn', onclick: () => removeLink(link) }, t('removeLink'))),
+    ),
+    state.error?.id === link.id ? h('p', { class: 'error', role: 'alert' }, state.error.message) : null,
+  );
+}
+
 function renderSide() {
   const counts = new Map();
   for (const item of state.items) {
     if (!counts.has(item.project)) counts.set(item.project, 0);
     if (item.status === 'open' && !item.laterAt) counts.set(item.project, counts.get(item.project) + 1);
   }
+  // A project with only links still needs a place in the list to filter by.
+  for (const link of state.links) if (!counts.has(link.project)) counts.set(link.project, 0);
   const total = [...counts.values()].reduce((sum, n) => sum + n, 0);
   document.title = total ? `(${total}) Ask·ito` : 'Ask·ito';
   const entry = (name, label, count) =>
@@ -795,10 +878,21 @@ function shortcutHint() {
 function renderMain() {
   const tab = currentTab();
   const inProject = state.items.filter((item) => !state.project || item.project === state.project);
-  const items = visibleItems();
-  const count = inProject.filter((item) => inTab(item, tab)).length;
+  const items = tab.links ? visibleLinks() : visibleItems();
+  const count = tab.links ? state.links.filter((link) => !state.project || link.project === state.project).length : inProject.filter((item) => inTab(item, tab)).length;
   let content;
-  if (items.length) {
+  if (items.length && tab.links) {
+    let number = -1;
+    const groups = groupItems(items);
+    content = groups.map((group) =>
+      h(
+        'section',
+        { class: 'group' },
+        !state.project && groups.length > 1 ? h('h2', { class: 'group-head' }, projectLabel(group.project), h('span', { class: 'group-count' }, String(group.count))) : null,
+        group.days.flatMap((day) => [h('h3', { class: 'day-head' }, day.label), h('ol', { class: 'list' }, day.items.map((link) => renderLinkRow(link, (number += 1))))]),
+      ),
+    );
+  } else if (items.length) {
     let number = -1;
     const groups = groupItems(items);
     content = [

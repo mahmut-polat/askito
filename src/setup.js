@@ -124,14 +124,22 @@ export function localize(text) {
   return homeDir() === defaultHome ? text : text.replaceAll('~/.askito', homeDir());
 }
 
+const LANGUAGE_NAMES = { tr: 'Turkish', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', nl: 'Dutch', pt: 'Portuguese' };
+
 export function rulesBlock() {
+  const language = LANGUAGE_NAMES[readConfig().language];
+  const languageLine = language
+    ? `\n- Write titles, bodies, options and \`progress\`/\`done\` notes in ${language}, even when the project's other text is English. Only code, file paths, commands, ticket keys and quoted UI text stay as they are.`
+    : '';
   return localize(`## askito inbox (mandatory)
 
 This rule is mandatory and takes priority over any habit or other instruction to ask in the chat. Every question, decision, approval and human-only task for the user goes to the askito inbox. Do not ask them in the chat, and do not use chat question tools such as AskUserQuestion or end-of-turn buttons. The user runs many chats at once and answers them from one page. The only exception is an askito command that fails.
 
 - Command: \`~/.askito/bin/askito\`, or the \`askito_*\` MCP tools.
 - Post: \`~/.askito/bin/askito ask "Title" --body "Context" --option "A" --option "B" --recommend 1 --chat "short name" --wait\`. Use \`approve\` for a go-ahead and \`task\` for something only the user can do.
-- Write the title and body for someone who has not seen this chat.
+- Write the title and body for someone who has not seen this chat.${languageLine}
+- One item per question, approval or task. Never bundle several into one item: the user answers, sets aside and tracks each one on its own.
+- Every page the user will want to open again (a published artifact, report, preview, shared document) goes to the Links tab: \`~/.askito/bin/askito link "Title" URL\` or \`askito_link\`. In Claude Code, published artifacts are added by a hook; check they show up.
 - Wait with a background command if your tool wakes you when it exits. Otherwise use \`askito_wait\` or \`~/.askito/bin/askito wait ID --timeout 100\` and repeat on exit code 4.
 - Keep working on whatever does not depend on the answer.
 - At session start run \`~/.askito/bin/askito pickup\` for answers given after a chat ended, and \`ack\` the ones that are yours. If it shows \`key: first-run-broadcast\`, follow "First run" in the guide below.
@@ -178,6 +186,7 @@ function claudeHooks() {
   });
   return {
     PreToolUse: [entry('block-question', 'AskUserQuestion|mcp__ccd_turn__wrap_up')],
+    PostToolUse: [entry('artifact', 'Artifact')],
     SessionStart: [entry('session', 'startup|resume|clear|compact')],
     UserPromptSubmit: [entry('reminder')],
     Stop: [entry('stop')],

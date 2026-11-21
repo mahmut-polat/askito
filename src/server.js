@@ -209,6 +209,24 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       return sendJson(res, 200, store.directory());
     }
 
+    if (route === 'GET /api/links') {
+      require_(who, 'agent', 'human');
+      const filter = { project: searchParams.get('project') ?? undefined, removed: searchParams.get('removed') === '1' };
+      return sendJson(res, 200, { links: store.listLinks(filter) });
+    }
+
+    if (route === 'POST /api/links') {
+      require_(who, 'agent');
+      const link = store.addLink(await readJson(req));
+      return sendJson(res, link.updated ? 200 : 201, { link });
+    }
+
+    const linkMatch = pathname.match(/^\/api\/links\/([a-z0-9]+)\/(remove|restore)$/);
+    if (req.method === 'POST' && linkMatch) {
+      require_(who, 'agent', 'human');
+      return sendJson(res, 200, { link: store.removeLink(linkMatch[1], linkMatch[2] === 'remove') });
+    }
+
     if (route === 'GET /api/wait') {
       require_(who, 'agent');
       const ids = (searchParams.get('ids') ?? '').split(',').filter(Boolean);

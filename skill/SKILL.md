@@ -7,7 +7,7 @@ description: Mandatory channel for questions, approvals and human-only tasks. Se
 
 The user runs many AI chats at once and answers all of them from one local inbox page. Posting there is mandatory: do not ask questions in the chat, and do not use chat question tools such as AskUserQuestion or end-of-turn buttons.
 
-The command on this machine is `~/.askito/bin/askito`. MCP clients also have the same actions as `askito_ask`, `askito_wait`, `askito_pickup`, `askito_ack`, `askito_reply` and `askito_done`.
+The command on this machine is `~/.askito/bin/askito`. MCP clients also have the same actions as `askito_ask`, `askito_wait`, `askito_pickup`, `askito_ack`, `askito_reply`, `askito_progress`, `askito_done` and `askito_link`.
 
 ## When the user types `/askito`
 
@@ -33,7 +33,7 @@ The project is detected from the git repository. Use `--project` only when the d
 
 Use `--key <stable-id>` when you might retry, so the user gets one item instead of two. Use `--urgent` only when all your work is blocked.
 
-Ask one thing per item.
+Ask one thing per item. Several questions or jobs mean several items, never one item with a list inside, because the user answers, sets aside and tracks each one on its own.
 
 ## Get the answer
 
@@ -60,6 +60,18 @@ Read `comment` even when there is a decision. It can change what the decision me
 - Need more detail on the same subject: `~/.askito/bin/askito reply ID "Your follow-up"`, then wait again.
 - Starting on the answer: `~/.askito/bin/askito progress ID "What you are doing"`. Do this straight away, and again during long work.
 - Finished: `~/.askito/bin/askito done ID "What you did"`. The note is required, because it is the result the user reads.
+
+## Links
+
+Every page the user will want to open again goes to the Links tab: a published artifact, a report, a preview, a shared document. Add it each time you publish or update it. The same address again updates its entry instead of adding a second one.
+
+```bash
+~/.askito/bin/askito link "Leaflet 2, A4 print version" https://claude.ai/artifact/SUWSsov7 --body "Final copy for the printer"
+~/.askito/bin/askito links            # what is already there
+~/.askito/bin/askito unlink ID        # drop one from the list
+```
+
+MCP clients use `askito_link`. In Claude Code a hook adds every Artifact publish by itself and tells you so; if you see no such note, add the link yourself. If you keep a Markdown register of pages, `askito links import FILE` adds every address in its tables.
 
 ## Taking over dropped work
 

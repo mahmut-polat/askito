@@ -84,6 +84,22 @@ const TOOLS = [
     description: 'Close an item after you have acted on the answer, or withdraw it if it is no longer needed.',
     inputSchema: { type: 'object', required: ['id', 'note'], properties: { id: { type: 'string' }, note: { type: 'string', description: 'One line on what you did. The human reads this as the result.' } } },
   },
+  {
+    name: 'askito_link',
+    description:
+      'Add a page the human will want to open again (a published artifact, report, preview or document) to the Links tab of their inbox. Call it every time you publish or update one. The same address again updates its entry.',
+    inputSchema: {
+      type: 'object',
+      required: ['title', 'url'],
+      properties: {
+        title: { type: 'string', description: 'What the page is, in a few words.' },
+        url: { type: 'string', description: 'The full address.' },
+        body: { type: 'string', description: 'Optional one line on what is in it.' },
+        project: { type: 'string' },
+        cwd: cwdField,
+      },
+    },
+  },
 ];
 
 const handlers = {
@@ -129,6 +145,11 @@ const handlers = {
   async askito_progress({ id, text }) {
     await api('POST', `/api/items/${encodeURIComponent(id)}/progress`, { text });
     return `Reported on ${id}.`;
+  },
+  async askito_link({ cwd, ...args }) {
+    const here = detectContext(cwd || process.cwd());
+    const { link } = await api('POST', '/api/links', { ...args, project: args.project || here.project, chat: here.chat, sessionId: here.session });
+    return `${link.updated ? 'Updated' : 'Added'} in the Links tab: ${link.title}`;
   },
   async askito_done({ id, note }) {
     await api('POST', `/api/items/${encodeURIComponent(id)}/done`, { note });
