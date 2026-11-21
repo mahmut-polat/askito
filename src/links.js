@@ -65,11 +65,14 @@ export function artifactFromHook(input) {
   const tool = input.tool_input ?? {};
   if (tool.action && tool.action !== 'publish') return null;
   if (tool.asset) return null;
+  // Claude Code hands over { url, title, ... }; other shapes fall back to text.
+  const result = input.tool_response && typeof input.tool_response === 'object' && !Array.isArray(input.tool_response) ? input.tool_response : {};
   const response = typeof input.tool_response === 'string' ? input.tool_response : JSON.stringify(input.tool_response ?? '');
-  const url = tool.url?.match(ARTIFACT_URL)?.[0] ?? response.match(ARTIFACT_URL)?.[0];
+  const url = result.url?.match(ARTIFACT_URL)?.[0] ?? tool.url?.match(ARTIFACT_URL)?.[0] ?? response.match(ARTIFACT_URL)?.[0];
   if (!url) return null;
   const file = tool.file_path ? path.resolve(input.cwd ?? process.cwd(), tool.file_path) : null;
-  const title = (file && htmlTitle(file)) || tool.title || (file ? path.basename(file).replace(/\.[^.]+$/, '') : null) || 'Artifact';
+  const title =
+    (typeof result.title === 'string' && result.title.trim()) || (file && htmlTitle(file)) || tool.title || (file ? path.basename(file).replace(/\.[^.]+$/, '') : null) || 'Artifact';
   return { url, title: title.slice(0, 300), body: tool.description?.slice(0, 500) };
 }
 

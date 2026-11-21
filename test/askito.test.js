@@ -345,6 +345,12 @@ describe('links', () => {
     assert.equal(artifactFromHook({ ...publish, tool_input: { ...publish.tool_input, asset: true } }), null);
     assert.equal(artifactFromHook({ ...publish, tool_response: 'refused' }), null);
     assert.equal(artifactFromHook({ ...publish, tool_name: 'Write' }), null);
+    // The shape Claude Code passes to the hook: a result object with the page title.
+    const real = artifactFromHook({
+      ...publish,
+      tool_response: { url: 'https://claude.ai/artifact/VuN7MA6g', title: 'bukiby Spacing Choices', updated: false, owned: true },
+    });
+    assert.deepEqual(real, { url: 'https://claude.ai/artifact/VuN7MA6g', title: 'bukiby Spacing Choices', body: 'Four pages' });
   });
 });
 
