@@ -87,13 +87,14 @@ const TOOLS = [
   {
     name: 'askito_link',
     description:
-      'Add a page the human will want to open again (a published artifact, report, preview or document) to the Links tab of their inbox. Call it every time you publish or update one. The same address again updates its entry.',
+      'Add something the human will want to open again to their inbox: a web page (published artifact, report, preview, shared document) goes to the Links tab, a file on this computer (video, PDF, Markdown report, image) goes to the Files tab, where a click opens it or its folder. Call it every time you publish, update or produce one. The same address or path again updates its entry.',
     inputSchema: {
       type: 'object',
-      required: ['title', 'url'],
+      required: ['title'],
       properties: {
-        title: { type: 'string', description: 'What the page is, in a few words.' },
-        url: { type: 'string', description: 'The full address.' },
+        title: { type: 'string', description: 'What it is, in a few words.' },
+        url: { type: 'string', description: 'The full web address. Give this or path.' },
+        path: { type: 'string', description: 'The absolute path of a file on this computer. Give this or url.' },
         body: { type: 'string', description: 'Optional one line on what is in it.' },
         project: { type: 'string' },
         cwd: cwdField,
@@ -149,7 +150,7 @@ const handlers = {
   async askito_link({ cwd, ...args }) {
     const here = detectContext(cwd || process.cwd());
     const { link } = await api('POST', '/api/links', { ...args, project: args.project || here.project, chat: here.chat, sessionId: here.session });
-    return `${link.updated ? 'Updated' : 'Added'} in the Links tab: ${link.title}`;
+    return `${link.updated ? 'Updated' : 'Added'} in the ${link.path ? 'Files' : 'Links'} tab: ${link.title}`;
   },
   async askito_done({ id, note }) {
     await api('POST', `/api/items/${encodeURIComponent(id)}/done`, { note });

@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const KINDS = ['question', 'approval', 'task'];
 export const FIRST_RUN_KEY = 'first-run-broadcast';
@@ -65,6 +67,33 @@ function normalizeOptions(raw, kind) {
 function newId() {
   const bytes = randomBytes(6);
   return Array.from(bytes, (b) => ID_ALPHABET[b % ID_ALPHABET.length]).join('');
+}
+
+// A link is a web address or a file on this computer. Files are kept as an
+// absolute path so the inbox can open them, or the folder they are in.
+function linkTarget(input) {
+  const raw = text(input.path, 'path', 4000) ?? text(input.url, 'url', 4000, { required: true });
+  if (/^https?:\/\//i.test(raw)) {
+    let parsed;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      throw invalid('url must be a full address such as https://claude.ai/artifact/...');
+    }
+    return { kind: 'web', url: parsed.href, path: null };
+  }
+  let file = raw;
+  if (/^file:\/\//i.test(raw)) {
+    try {
+      file = fileURLToPath(raw);
+    } catch {
+      throw invalid('the file:// address is not valid');
+    }
+  } else if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !/^[a-z]:[\\/]/i.test(raw)) {
+    throw invalid('url must start with https:// or http://, or be the full path of a file');
+  }
+  if (!path.isAbsolute(file)) throw invalid('a file needs its full path, such as /Users/me/report.pdf');
+  return { kind: 'file', url: null, path: path.normalize(file) };
 }
 
 export function isResolved(item) {
@@ -344,17 +373,10 @@ export class Store extends EventEmitter {
   // Links are pages the user will want to open again, such as published
   // artifacts. Publishing the same address again updates its entry.
   addLink(input) {
-    const url = text(input.url, 'url', 2000, { required: true });
-    let parsed;
-    try {
-      parsed = new URL(url);
-    } catch {
-      throw invalid('url must be a full address such as https://claude.ai/artifact/...');
-    }
-    if (!['https:', 'http:'].includes(parsed.protocol)) throw invalid('url must start with https:// or http://');
+    const target = linkTarget(input);
     const project = text(input.project, 'project', LIMITS.meta) ?? 'unsorted';
     const fields = {
-      url: parsed.href,
+      ...target,
       title: text(input.title, 'title', LIMITS.title, { required: true }),
       body: text(input.body, 'body', LIMITS.description),
       project: this.projectMap[project] ?? project,
@@ -363,7 +385,7 @@ export class Store extends EventEmitter {
       sessionId: text(input.sessionId, 'sessionId', LIMITS.meta),
     };
     const now = new Date().toISOString();
-    const existing = [...this.links.values()].find((link) => link.url === fields.url);
+    const existing = [...this.links.values()].find((link) => (target.path ? link.path === target.path : link.url === target.url));
     if (existing) {
       // A republish without a project or account keeps what the first one said.
       for (const [key, value] of Object.entries(fields)) if (value !== null && !(key === 'project' && value === 'unsorted')) existing[key] = value;
@@ -385,10 +407,16 @@ export class Store extends EventEmitter {
   }
 
   removeLink(id, value = true) {
-    const link = this.links.get(id) ?? [...this.links.values()].find((entry) => entry.url === id);
+    const link = this.links.get(id) ?? [...this.links.values()].find((entry) => entry.url === id || entry.path === id);
     if (!link) throw new HttpError(404, 'not_found', `no link with id ${id}`);
     link.removedAt = value ? new Date().toISOString() : null;
     this.linksChanged();
+    return link;
+  }
+
+  getLink(id) {
+    const link = this.links.get(id);
+    if (!link || link.removedAt) throw new HttpError(404, 'not_found', `no link with id ${id}`);
     return link;
   }
 

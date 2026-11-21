@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { formatItem } from '../src/client.js';
 import { Sync } from '../src/cloud.js';
-import { artifactFromHook, parseLinkTable } from '../src/links.js';
+import { artifactFromHook, isRunnable, openCommand, parseLinkTable } from '../src/links.js';
 import { notifyCommand } from '../src/notify.js';
 import { createApp } from '../src/server.js';
 import { Store } from '../src/store.js';
@@ -281,7 +281,8 @@ describe('links', () => {
   test('only full web addresses are kept', () => {
     const store = newStore();
     assert.throws(() => store.addLink({ title: 'x', url: 'javascript:alert(1)' }), /https/);
-    assert.throws(() => store.addLink({ title: 'x', url: 'not a url' }), /full address/);
+    assert.throws(() => store.addLink({ title: 'x', url: 'not a url' }), /full path/);
+    assert.throws(() => store.addLink({ title: 'x', url: 'ftp://example.com/a' }), /https/);
     assert.throws(() => store.addLink({ url: 'https://example.com' }), /title is required/);
   });
 
@@ -296,6 +297,27 @@ describe('links', () => {
     store.flush();
     const reloaded = new Store(file);
     assert.equal(reloaded.listLinks()[0].title, 'Report v2');
+  });
+
+  test('a file is kept by its full path, from a plain path or a file:// address', () => {
+    const store = newStore();
+    const dir = tempDir();
+    const file = path.join(dir, 'cut 3.mp4');
+    const first = store.addLink({ title: 'Promo', path: file });
+    assert.deepEqual([first.kind, first.path, first.url], ['file', file, null]);
+    const again = store.addLink({ title: 'Promo v2', url: pathToFileURL(file).href });
+    assert.equal(again.id, first.id);
+    assert.throws(() => store.addLink({ title: 'x', path: 'relative/file.pdf' }), /full path/);
+  });
+
+  test('runnable files are only ever shown in their folder', () => {
+    assert.equal(isRunnable('/tmp/setup.command'), true);
+    assert.equal(isRunnable('C:\\x\\run.BAT'), true);
+    assert.equal(isRunnable('/tmp/report.pdf'), false);
+    assert.deepEqual(openCommand('darwin', '/a/b.mp4', false), ['open', ['/a/b.mp4']]);
+    assert.deepEqual(openCommand('darwin', '/a/b.mp4', true), ['open', ['-R', '/a/b.mp4']]);
+    assert.deepEqual(openCommand('win32', 'C:\\a\\b.pdf', true), ['explorer.exe', ['/select,C:\\a\\b.pdf']]);
+    assert.deepEqual(openCommand('linux', '/a/b.pdf', true), ['xdg-open', ['/a']]);
   });
 
   test('merging projects moves their links too', () => {
@@ -371,6 +393,7 @@ describe('notifications', () => {
 describe('server', () => {
   const tokens = { agent: 'agent-secret', ui: 'ui-secret' };
   const notifications = [];
+  const opened = [];
   let server;
   let port;
   let store;
@@ -381,7 +404,7 @@ describe('server', () => {
     await new Promise((r) => probe.listen(0, '127.0.0.1', r));
     port = probe.address().port;
     await new Promise((r) => probe.close(r));
-    ({ server } = createApp({ store, port, tokens, onShutdown: () => {}, sendNotification: (...args) => notifications.push(args) }));
+    ({ server } = createApp({ store, port, tokens, onShutdown: () => {}, sendNotification: (...args) => notifications.push(args), openFile: (...args) => opened.push(args) }));
     await new Promise((r) => server.listen(port, '127.0.0.1', r));
   });
 
@@ -566,6 +589,30 @@ describe('server', () => {
     assert.equal((await call('POST', `/api/links/${link.id}/remove`, { headers: human(), body: {} })).status, 200);
     assert.ok(!(await call('GET', '/api/links', { headers: human() })).json().links.some((entry) => entry.id === link.id));
   });
+  test('files: only the page opens them, only listed ones, and runnable ones only in their folder', async () => {
+    const dir = tempDir();
+    const video = path.join(dir, 'cut.mp4');
+    const script = path.join(dir, 'install.command');
+    fs.writeFileSync(video, 'x');
+    fs.writeFileSync(script, 'x');
+    const add = async (title, file) => (await call('POST', '/api/links', { headers: agent, body: { title, path: file } })).json().link;
+    const movie = await add('Cut', video);
+    const runnable = await add('Installer', script);
+    assert.equal((await call('POST', `/api/links/${movie.id}/open`, { headers: agent, body: {} })).status, 403);
+    assert.equal((await call('POST', `/api/links/${movie.id}/open`, { headers: human(), body: {} })).status, 200);
+    assert.deepEqual(opened.at(-1), [video, false]);
+    assert.equal((await call('POST', `/api/links/${movie.id}/reveal`, { headers: human(), body: {} })).status, 200);
+    assert.deepEqual(opened.at(-1), [video, true]);
+    assert.equal((await call('POST', `/api/links/${runnable.id}/open`, { headers: human(), body: {} })).json().revealed, true);
+    assert.deepEqual(opened.at(-1), [script, true]);
+    const web = (await call('POST', '/api/links', { headers: agent, body: { title: 'Page', url: 'https://example.com/p' } })).json().link;
+    assert.equal((await call('POST', `/api/links/${web.id}/open`, { headers: human(), body: {} })).status, 400);
+    fs.rmSync(video);
+    const listed = (await call('GET', '/api/links', { headers: human() })).json().links;
+    assert.equal(listed.find((l) => l.id === movie.id).exists, false);
+    assert.equal((await call('POST', `/api/links/${movie.id}/open`, { headers: human(), body: {} })).status, 404);
+    assert.equal(opened.length, 3);
+  });
 });
 
 describe('end to end', () => {
@@ -678,6 +725,13 @@ describe('end to end', () => {
       const register = path.join(fakeHome, 'KAYIT.md');
       fs.writeFileSync(register, '| Title | URL | Account |\n|---|---|---|\n| Deck | https://claude.ai/artifact/Dk9 | info |\n| Night report | https://claude.ai/artifact/Night1 | admin |\n');
       assert.match((await cli('links', 'import', register)).stdout, /2 links read, 1 new/);
+      fs.writeFileSync(path.join(fakeHome, 'notes.md'), '# notes');
+      await cli('link', 'Notes', 'notes.md');
+      const file = JSON.parse((await cli('links', '--json')).stdout).find((l) => l.title === 'Notes');
+      // The temp folder can sit behind a symlink (/var is /private/var on macOS).
+      assert.equal(fs.realpathSync(file.path), fs.realpathSync(path.join(fakeHome, 'notes.md')));
+      assert.equal(file.kind, 'file');
+      await assert.rejects(cli('link', 'Gone', 'missing.pdf'), /no file at/);
     });
 
     test('a turn that ends on a question is sent back once', () => {

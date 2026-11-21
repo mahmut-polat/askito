@@ -8,7 +8,8 @@ const TABS = [
   { id: 'agents', status: 'answered', label: 'tabAgents', head: 'headAgents', empty: 'emptyAgents' },
   { id: 'done', status: 'done', label: 'tabDone', head: 'headDone', empty: 'emptyDone' },
   { id: 'removed', status: 'dismissed', label: 'tabRemoved', head: 'headRemoved', empty: 'emptyRemoved' },
-  { id: 'links', links: true, label: 'tabLinks', head: 'headLinks', empty: 'emptyLinks' },
+  { id: 'links', links: 'web', label: 'tabLinks', head: 'headLinks', empty: 'emptyLinks' },
+  { id: 'files', links: 'file', label: 'tabFiles', head: 'headFiles', empty: 'emptyFiles' },
 ];
 const STALL_MINUTES = 30;
 const KIND_LABEL = { question: 'kindQuestion', approval: 'kindApproval', task: 'kindTask' };
@@ -26,6 +27,10 @@ const KIND_ICON = {
   task: [
     ['circle', { cx: 12, cy: 8, r: 5 }],
     ['path', { d: 'M20 21a8 8 0 0 0-16 0' }],
+  ],
+  file: [
+    ['path', { d: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z' }],
+    ['path', { d: 'M14 2v4a2 2 0 0 0 2 2h4' }],
   ],
   link: [
     ['path', { d: 'M15 3h6v6' }],
@@ -708,16 +713,31 @@ function renderRow(item, index) {
   return h('li', { class: `row kind-${item.kind}${isOpen ? ' is-open' : ''}`, 'data-item': item.id }, header, detail);
 }
 
-function visibleLinks() {
+const linkKind = (link) => (link.path ? 'file' : 'web');
+
+function visibleLinks(kind) {
   const query = state.query.trim().toLocaleLowerCase(language);
   const links = state.links.filter((link) => {
+    if (linkKind(link) !== kind) return false;
     if (state.project && link.project !== state.project) return false;
     if (!query) return true;
-    return [link.title, link.body, link.url, link.chat, link.project, link.account].some((field) => field?.toLocaleLowerCase(language).includes(query));
+    return [link.title, link.body, link.url, link.path, link.chat, link.project, link.account].some((field) => field?.toLocaleLowerCase(language).includes(query));
   });
   const newest = (a, b) => b.updatedAt.localeCompare(a.updatedAt);
   const compare = { newest, urgent: newest, oldest: (a, b) => newest(b, a), project: (a, b) => a.project.localeCompare(b.project, language) || newest(a, b) };
   return links.sort(compare[state.sort] ?? newest).map((link) => ({ ...link, createdAt: link.updatedAt }));
+}
+
+async function openLink(link, action) {
+  state.error = null;
+  try {
+    await request('POST', `/api/links/${link.id}/${action}`, {});
+    live.textContent = t(action === 'reveal' ? 'announceRevealed' : 'announceOpened');
+  } catch (err) {
+    state.error = { id: link.id, message: state.sessionLost ? t('errorSession') : err.status === 404 ? t('fileMissing') : t('errorGeneric') };
+  }
+  await refresh();
+  render();
 }
 
 async function removeLink(link) {
@@ -730,7 +750,67 @@ async function removeLink(link) {
   await refresh();
 }
 
-function renderLinkRow(link, index) {
+function copyText(value, label) {
+  return h(
+    'button',
+    {
+      type: 'button',
+      class: 'btn copy',
+      onclick: async (event) => {
+        const control = event.currentTarget;
+        await navigator.clipboard.writeText(value);
+        control.textContent = t('copied');
+        setTimeout(() => {
+          control.textContent = label;
+        }, 1500);
+      },
+    },
+    label,
+  );
+}
+
+function renderFileRow(link) {
+  const shown = link.shortPath ?? link.path;
+  const name = shown.split(/[\\/]/).pop();
+  const folder = shown.slice(0, shown.length - name.length);
+  const missing = link.exists === false;
+  return h(
+    'li',
+    { class: 'row kind-file', 'data-link': link.id },
+    h(
+      'div',
+      { class: 'row-head link-head file-head' },
+      kindIcon('file'),
+      h(
+        'span',
+        { class: 'row-text' },
+        h('button', { type: 'button', class: 'row-title link-title file-title', disabled: missing, onclick: () => openLink(link, 'open') }, link.title),
+        h(
+          'span',
+          { class: 'meta' },
+          h('span', { class: `badge badge-${projectHue(link.project)}` }, projectLabel(link.project)),
+          missing ? h('span', { class: 'tag urgent' }, t('fileMissing')) : null,
+          link.chat ? h('span', {}, link.chat) : null,
+          h('time', { datetime: link.updatedAt }, `${stamp(link.updatedAt)} (${relative(link.updatedAt)})`),
+        ),
+        h('span', { class: 'file-path', title: link.path }, h('span', { class: 'file-folder' }, folder), h('strong', {}, name)),
+        link.body ? h('span', { class: 'row-note' }, link.body) : null,
+      ),
+      h(
+        'span',
+        { class: 'link-actions' },
+        h('button', { type: 'button', class: 'btn primary', disabled: missing, onclick: () => openLink(link, 'open') }, t('openFile')),
+        h('button', { type: 'button', class: 'btn', disabled: missing, onclick: () => openLink(link, 'reveal') }, t('revealFile')),
+        copyText(link.path, t('copyPath')),
+        h('button', { type: 'button', class: 'btn', onclick: () => removeLink(link) }, t('removeLink')),
+      ),
+    ),
+    state.error?.id === link.id ? h('p', { class: 'error', role: 'alert' }, state.error.message) : null,
+  );
+}
+
+function renderLinkRow(link) {
+  if (link.path) return renderFileRow(link);
   let host = '';
   try {
     host = new URL(link.url).host;
@@ -759,7 +839,6 @@ function renderLinkRow(link, index) {
     h(
       'div',
       { class: 'row-head link-head' },
-      h('span', { class: 'row-num' }, String(index + 1)),
       kindIcon('link'),
       h(
         'span',
@@ -878,18 +957,19 @@ function shortcutHint() {
 function renderMain() {
   const tab = currentTab();
   const inProject = state.items.filter((item) => !state.project || item.project === state.project);
-  const items = tab.links ? visibleLinks() : visibleItems();
-  const count = tab.links ? state.links.filter((link) => !state.project || link.project === state.project).length : inProject.filter((item) => inTab(item, tab)).length;
+  const items = tab.links ? visibleLinks(tab.links) : visibleItems();
+  const count = tab.links
+    ? state.links.filter((link) => linkKind(link) === tab.links && (!state.project || link.project === state.project)).length
+    : inProject.filter((item) => inTab(item, tab)).length;
   let content;
   if (items.length && tab.links) {
-    let number = -1;
     const groups = groupItems(items);
     content = groups.map((group) =>
       h(
         'section',
         { class: 'group' },
         !state.project && groups.length > 1 ? h('h2', { class: 'group-head' }, projectLabel(group.project), h('span', { class: 'group-count' }, String(group.count))) : null,
-        group.days.flatMap((day) => [h('h3', { class: 'day-head' }, day.label), h('ol', { class: 'list' }, day.items.map((link) => renderLinkRow(link, (number += 1))))]),
+        group.days.flatMap((day) => [h('h3', { class: 'day-head' }, day.label), h('ol', { class: 'list' }, day.items.map((link) => renderLinkRow(link)))]),
       ),
     );
   } else if (items.length) {

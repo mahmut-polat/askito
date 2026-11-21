@@ -1,8 +1,11 @@
+import { execFile } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { Sync } from './cloud.js';
+import { isRunnable, openCommand } from './links.js';
 import { notify } from './notify.js';
 import { agentToken, ensureHome, filePath, getPort, PACKAGE_ROOT, readConfig, uiToken, VERSION } from './paths.js';
 import { HttpError, isResolved, Store } from './store.js';
@@ -69,7 +72,18 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-export function createApp({ store, port, tokens, onShutdown, sendNotification = notify }) {
+// Paths under the home folder read better as ~/...
+function shortPath(file) {
+  const home = os.homedir();
+  return file === home || file.startsWith(home + path.sep) ? `~${file.slice(home.length)}` : file;
+}
+
+function launchFile(file, reveal) {
+  const [command, args] = openCommand(process.platform, file, reveal);
+  execFile(command, args, () => {});
+}
+
+export function createApp({ store, port, tokens, onShutdown, sendNotification = notify, openFile = launchFile }) {
   const allowedHosts = new Set([`askito.localhost:${port}`, `127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
   const allowedOrigins = new Set([...allowedHosts].map((h) => `http://${h}`));
   const streams = new Set();
@@ -212,7 +226,9 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
     if (route === 'GET /api/links') {
       require_(who, 'agent', 'human');
       const filter = { project: searchParams.get('project') ?? undefined, removed: searchParams.get('removed') === '1' };
-      return sendJson(res, 200, { links: store.listLinks(filter) });
+      // Files can move or be deleted after they were added, so say which are still there.
+      const links = store.listLinks(filter).map((link) => (link.path ? { ...link, exists: fs.existsSync(link.path), shortPath: shortPath(link.path) } : { kind: 'web', ...link }));
+      return sendJson(res, 200, { links });
     }
 
     if (route === 'POST /api/links') {
@@ -221,10 +237,21 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       return sendJson(res, link.updated ? 200 : 201, { link });
     }
 
-    const linkMatch = pathname.match(/^\/api\/links\/([a-z0-9]+)\/(remove|restore)$/);
+    const linkMatch = pathname.match(/^\/api\/links\/([a-z0-9]+)\/(remove|restore|open|reveal)$/);
     if (req.method === 'POST' && linkMatch) {
+      const [, linkId, linkAction] = linkMatch;
+      if (linkAction === 'open' || linkAction === 'reveal') {
+        // Only the person at the inbox opens files, and only files on the list.
+        require_(who, 'human');
+        const link = store.getLink(linkId);
+        if (!link.path) throw new HttpError(400, 'not_a_file', 'only file entries open on this computer');
+        if (!fs.existsSync(link.path)) throw new HttpError(404, 'file_missing', 'the file is no longer there');
+        const reveal = linkAction === 'reveal' || isRunnable(link.path);
+        openFile(link.path, reveal);
+        return sendJson(res, 200, { ok: true, revealed: reveal });
+      }
       require_(who, 'agent', 'human');
-      return sendJson(res, 200, { link: store.removeLink(linkMatch[1], linkMatch[2] === 'remove') });
+      return sendJson(res, 200, { link: store.removeLink(linkId, linkAction === 'remove') });
     }
 
     if (route === 'GET /api/wait') {

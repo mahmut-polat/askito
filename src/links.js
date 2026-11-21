@@ -80,3 +80,17 @@ export function accountName(env = process.env) {
   const email = env.CLAUDE_CODE_USER_EMAIL ?? '';
   return email.includes('@') ? email.split('@')[0] : undefined;
 }
+
+// Opening one of these would run it, so the inbox only shows them in their folder.
+const RUNNABLE = /\.(app|command|tool|terminal|sh|bash|zsh|fish|csh|scpt|scptd|applescript|workflow|action|pkg|mpkg|dmg|jar|exe|msi|bat|cmd|com|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|hta|lnk|scr|cpl|reg|desktop|run|bin|appimage|py|rb|pl)$/i;
+
+export function isRunnable(file) {
+  return RUNNABLE.test(file);
+}
+
+// The command that opens a file, or shows it in its folder, with no shell.
+export function openCommand(platform, file, reveal) {
+  if (platform === 'darwin') return ['open', reveal ? ['-R', file] : [file]];
+  if (platform === 'win32') return ['explorer.exe', [reveal ? `/select,${file}` : file]];
+  return ['xdg-open', [reveal ? path.dirname(file) : file]];
+}

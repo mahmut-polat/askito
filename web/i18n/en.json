@@ -107,5 +107,15 @@
   "removeLink": "Remove from list",
   "linkRemoved": "Link removed from the list",
   "opensNewTab": "opens in a new tab",
-  "linkAccount": "account: {name}"
+  "linkAccount": "account: {name}",
+  "tabFiles": "Files",
+  "headFiles": "files",
+  "emptyFilesTitle": "No files yet",
+  "emptyFilesBody": "Videos, reports and documents your agents make on this computer collect here. Click one to open it or the folder it is in.",
+  "openFile": "Open",
+  "revealFile": "Show in folder",
+  "copyPath": "Copy path",
+  "fileMissing": "The file is no longer there",
+  "announceOpened": "File opened",
+  "announceRevealed": "Folder opened"
 }

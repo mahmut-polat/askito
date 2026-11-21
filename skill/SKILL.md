@@ -71,6 +71,14 @@ Every page the user will want to open again goes to the Links tab: a published a
 ~/.askito/bin/askito unlink ID        # drop one from the list
 ```
 
+Files on this computer go in the same way and land in the Files tab, where a click opens the file or shows it in its folder. Add every file you make for the user: videos, PDFs, Markdown reports, images, exports. A relative path or `~` works on the command line; `askito_link` needs `path` as an absolute path.
+
+```bash
+~/.askito/bin/askito link "Promo video, cut 3" ~/Projects/buki/out/promo-cut3.mp4 --body "60 s, with the Suno track"
+```
+
+Scripts and apps (`.command`, `.sh`, `.app`, `.exe` and similar) are only ever shown in their folder, never run.
+
 MCP clients use `askito_link`. In Claude Code a hook adds every Artifact publish by itself and tells you so; if you see no such note, add the link yourself. If you keep a Markdown register of pages, `askito links import FILE` adds every address in its tables.
 
 ## Taking over dropped work

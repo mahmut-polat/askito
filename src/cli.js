@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { cloudStatus, DEFAULT_SERVER, login, logout } from './cloud.js';
 import { api, ensureServer, formatItem, inboxUrl, status, stopServer, waitForItems } from './client.js';
@@ -47,7 +49,8 @@ For agents
   askito list [--status open|answered|done|dismissed] [--project NAME] [--json]
 
 Links (published artifacts, reports, previews the user opens again)
-  askito link "Title" URL [--body TEXT] [--project NAME] [--account NAME]
+  askito link "Title" URL|FILE [--body TEXT] [--project NAME] [--account NAME]
+                                   A file lands in the Files tab, where a click opens it or its folder
   askito links [--project NAME] [--removed] [--json]
   askito links import FILE         Add every address in a Markdown table
   askito unlink ID|URL
@@ -100,6 +103,14 @@ function outputResult(result, values) {
   print(values.json ? JSON.stringify(result, null, 2) : result.ready.map(formatItem).join('\n\n') || `pending: ${result.pending.join(', ')}`);
   if (!result.ready.length) return EXIT_TIMEOUT;
   return result.ready.some((item) => item.status === 'dismissed') ? EXIT_DISMISSED : 0;
+}
+
+// Web addresses pass through; anything else is a file on this computer.
+function linkTarget(target) {
+  if (/^https?:\/\//i.test(target)) return { url: target };
+  const file = path.resolve(target.replace(/^~(?=$|[\\/])/, os.homedir()));
+  if (!fs.existsSync(file)) throw new Error(`no file at ${file}`);
+  return { path: file };
 }
 
 async function post(kind, title, values) {
@@ -240,12 +251,12 @@ export async function main(argv) {
       return 0;
     }
     case 'link': {
-      const [title, url] = rest;
-      if (!title || !url) throw new Error('usage: askito link "Title" https://claude.ai/artifact/...');
+      const [title, target] = rest;
+      if (!title || !target) throw new Error('usage: askito link "Title" https://claude.ai/artifact/...  or  askito link "Title" ~/path/to/file.pdf');
       const here = detectContext();
       const { link } = await api('POST', '/api/links', {
         title,
-        url,
+        ...linkTarget(target),
         body: readBody(values),
         project: values.project ?? here.project,
         chat: values.chat ?? here.chat,
@@ -271,13 +282,13 @@ export async function main(argv) {
       if (values.project) query.set('project', values.project);
       if (values.removed) query.set('removed', '1');
       const { links } = await api('GET', `/api/links?${query}`);
-      print(values.json ? JSON.stringify(links, null, 2) : links.map((l) => `${l.id}  ${l.project}  ${l.title}\n        ${l.url}`).join('\n') || 'no links');
+      print(values.json ? JSON.stringify(links, null, 2) : links.map((l) => `${l.id}  ${l.project}  ${l.title}\n        ${l.url ?? l.path}${l.exists === false ? '  (missing)' : ''}`).join('\n') || 'no links');
       return 0;
     }
     case 'unlink': {
       if (!rest[0]) throw new Error('usage: askito unlink ID|URL');
       const { links } = await api('GET', '/api/links');
-      const target = links.find((l) => l.id === rest[0] || l.url === rest[0]);
+      const target = links.find((l) => l.id === rest[0] || l.url === rest[0] || l.path === rest[0]);
       if (!target) throw new Error(`no link ${rest[0]}`);
       await api('POST', `/api/links/${target.id}/remove`, {});
       print(`removed: ${target.title}`);

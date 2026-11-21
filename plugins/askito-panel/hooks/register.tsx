@@ -23,6 +23,10 @@ const KIND_ICON = {
     color: '#a678e2',
     shapes: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
   },
+  file: {
+    color: '#c9922e',
+    shapes: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  },
   link: {
     color: '#2fa38a',
     shapes: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
@@ -37,7 +41,7 @@ function badgeColor(project: string) {
   return BADGE_COLORS[sum % BADGE_COLORS.length]
 }
 
-function kindSvg(kind: InboxItem['kind'] | 'link') {
+function kindSvg(kind: InboxItem['kind'] | 'link' | 'file') {
   const { color, shapes } = KIND_ICON[kind]
   return `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="${color}" fill-opacity="0.18"/><g transform="translate(6 6) scale(0.8333)" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shapes}</g></svg>`
 }
@@ -216,6 +220,13 @@ async function refresh($: EngineInterface) {
   }
 }
 
+async function openFile($: EngineInterface, id: string, action: 'open' | 'reveal') {
+  const link = await connect($)
+  const res = link ? await request($, link, `/api/links/${id}/${action}`, {}).catch(() => null) : null
+  await update($, error, () => !res || !res.ok)
+  await refresh($)
+}
+
 async function act($: EngineInterface, id: string, action: 'answer' | 'dismiss' | 'later' | 'close' | 'reopen', body: object) {
   const link = await connect($)
   const res = link ? await request($, link, `/api/items/${id}/${action}`, body).catch(() => null) : null
@@ -266,8 +277,10 @@ export const register: Register = on => {
       )
     }
     const source = mode === 'agents' ? others : list
-    const linkSource = saved.map(entry => ({ ...entry, createdAt: entry.updatedAt }))
-    const projects = [...new Set((mode === 'links' ? linkSource : source).map(item => item.project))].sort((a, b) => a.localeCompare(b))
+    const wantFiles = mode === 'files'
+    const linkSource = saved.filter(entry => Boolean(entry.path) === wantFiles).map(entry => ({ ...entry, createdAt: entry.updatedAt }))
+    const linkMode = mode === 'links' || mode === 'files'
+    const projects = [...new Set((linkMode ? linkSource : source).map(item => item.project))].sort((a, b) => a.localeCompare(b))
     const active = chosen && projects.includes(chosen) ? chosen : null
     const shown = active ? source.filter(item => item.project === active) : source
     // Nothing opens by itself: answering one item must not unfold the next.
@@ -375,7 +388,7 @@ export const register: Register = on => {
       </Box>
     )
 
-    const viewChip = (value: 'waiting' | 'agents' | 'links', label: string, count: number) => (
+    const viewChip = (value: 'waiting' | 'agents' | 'links' | 'files', label: string, count: number) => (
       <Button key={`view-${value}`} variant={mode === value ? 'primary' : 'secondary'} onPress={() => void update($, view, () => value)}>
         {label} <Text dimColor>{count}</Text>
       </Button>
@@ -430,16 +443,17 @@ export const register: Register = on => {
       )
     }
 
-    const linkRow = (entry: LinkEntry, index: number) => (
+    const linkRow = (entry: LinkEntry) => (
       <Box flexDirection="row" gap="sm" alignItems="flex-start">
-        <Box width={3} flexShrink={0} paddingTop="xs">
-          <Text tabular weight="semibold" dimColor>
-            {index}
-          </Text>
-        </Box>
-        <Svg source={kindSvg('link')} alt={t('tabLinks')} width={32} height={32} />
+        <Svg source={kindSvg(entry.path ? 'file' : 'link')} alt={t(entry.path ? 'tabFiles' : 'tabLinks')} width={32} height={32} />
         <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} gap="xs">
-          <Link href={entry.url} label={entry.title} />
+          {entry.path ? (
+            <Button key={`file-${entry.id}`} plain onPress={() => void openFile($, entry.id, 'open')}>
+              <Text weight="semibold">{entry.title}</Text>
+            </Button>
+          ) : (
+            <Link href={entry.url ?? ''} label={entry.title} />
+          )}
           <Text size="caption" dimColor>
             <Text size="caption" weight="medium" backgroundColor={badgeColor(entry.project)}>
               {` ${projectName(entry.project)} `}
@@ -451,13 +465,24 @@ export const register: Register = on => {
               {entry.body}
             </Text>
           ) : null}
+          {entry.path ? (
+            <Box flexDirection="column" gap="xs">
+              <Text size="caption" dimColor>
+                {entry.exists === false ? `${t('fileMissing')}: ${entry.path}` : entry.path}
+              </Text>
+              <Box flexDirection="row" flexWrap="wrap" gap="xs">
+                <Button key={`open-${entry.id}`} variant="primary" label={t('openFile')} onPress={() => void openFile($, entry.id, 'open')} />
+                <Button key={`reveal-${entry.id}`} variant="secondary" label={t('revealFile')} onPress={() => void openFile($, entry.id, 'reveal')} />
+              </Box>
+            </Box>
+          ) : null}
         </Box>
       </Box>
     )
     const shownLinks = sortLinks(active ? linkSource.filter(entry => entry.project === active) : linkSource, sorting)
     const linkGroups = groupItems(shownLinks)
     // Built only when shown, so the waiting list keeps its own numbering.
-    const linksBody = mode !== 'links' ? null : shownLinks.length ? (
+    const linksBody = !linkMode ? null : shownLinks.length ? (
       linkGroups.map(group => (
         <Box flexDirection="column" gap="md">
           {projects.length > 1 && !active ? <Text weight="bold">{projectName(group.project)}</Text> : null}
@@ -466,27 +491,27 @@ export const register: Register = on => {
               <Text size="caption" weight="semibold" dimColor>
                 {day.label}
               </Text>
-              {day.items.map(entry => linkRow(entry, (number += 1)))}
+              {day.items.map(entry => linkRow(entry))}
             </Box>
           ))}
         </Box>
       ))
     ) : (
       <Box flexDirection="column" gap="xs">
-        <Text weight="semibold">{t('emptyLinksTitle')}</Text>
+        <Text weight="semibold">{t(wantFiles ? 'emptyFilesTitle' : 'emptyLinksTitle')}</Text>
         <Text size="caption" dimColor>
-          {t('emptyLinksBody')}
+          {t(wantFiles ? 'emptyFilesBody' : 'emptyLinksBody')}
         </Text>
       </Box>
     )
-    const heading = mode === 'links' ? 'headLinks' : mode === 'agents' ? 'headAgents' : 'headWaiting'
+    const heading = mode === 'files' ? 'headFiles' : mode === 'links' ? 'headLinks' : mode === 'agents' ? 'headAgents' : 'headWaiting'
 
     return (
       <Box flexDirection="column" padding="md" gap="lg">
         <Box flexDirection="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap="sm">
           <Box flexDirection="row" alignItems="center" gap="sm">
             <Text size="title" weight="bold" tabular>
-              {mode === 'links' ? shownLinks.length : shown.length}
+              {linkMode ? shownLinks.length : shown.length}
             </Text>
             <Text size="heading">{t(heading)}</Text>
           </Box>
@@ -495,12 +520,13 @@ export const register: Register = on => {
         <Box flexDirection="row" flexWrap="wrap" gap="xs">
           {viewChip('waiting', t('tabWaiting'), list.length)}
           {viewChip('agents', t('tabAgents'), others.length)}
-          {viewChip('links', t('tabLinks'), saved.length)}
+          {viewChip('links', t('tabLinks'), saved.filter(entry => !entry.path).length)}
+          {viewChip('files', t('tabFiles'), saved.filter(entry => Boolean(entry.path)).length)}
         </Box>
         {projects.length > 1 ? (
           <Box flexDirection="row" flexWrap="wrap" gap="xs">
-            {chip('all', t('allProjects'), mode === 'links' ? linkSource.length : source.length, null)}
-            {projects.map(name => chip(name, projectName(name), (mode === 'links' ? linkSource : source).filter(item => item.project === name).length, name))}
+            {chip('all', t('allProjects'), linkMode ? linkSource.length : source.length, null)}
+            {projects.map(name => chip(name, projectName(name), (linkMode ? linkSource : source).filter(item => item.project === name).length, name))}
           </Box>
         ) : null}
         <Select
@@ -510,7 +536,7 @@ export const register: Register = on => {
           options={['newest', 'oldest', 'urgent', 'project'].map(value => ({ value, label: t(`sort_${value}`) }))}
           onSelect={value => void update($, sortMode, () => value)}
         />
-        {mode === 'links' ? (
+        {linkMode ? (
           linksBody
         ) : shown.length ? (
           groups.map(group => (

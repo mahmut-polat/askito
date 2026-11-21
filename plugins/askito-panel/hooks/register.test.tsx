@@ -233,3 +233,14 @@ test('Links lists published pages, and each title opens its address', async ($, 
   expect(await ui.find({ type: 'Text', text: /Run the migration/ })).toBeUndefined()
   await ui.unmount()
 })
+
+test('Files lists files on this computer, and Open asks askito to open one', async ($, on) => {
+  const file = { id: 'fil1', title: 'Promo cut 3', url: null, path: '/Users/me/promo/cut3.mp4', exists: true, body: null, project: 'billing', chat: null, account: null, createdAt: '2026-11-21T10:00:00.000Z', updatedAt: '2026-11-21T10:00:00.000Z' }
+  const sent = await start($, on, { items: [ITEM], links: [file] })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'view-files' })
+  expect((await ui.find({ type: 'Text', text: 'Promo cut 3' }))?.text).toBe('Promo cut 3')
+  await ui.press({ key: 'reveal-fil1' })
+  expect(sent.at(-1)?.url).toContain('/api/links/fil1/reveal')
+  await ui.unmount()
+})

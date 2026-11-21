@@ -24,7 +24,9 @@ export type InboxItem = {
 export type LinkEntry = {
   id: string
   title: string
-  url: string
+  url: string | null
+  path?: string | null
+  exists?: boolean
   body: string | null
   project: string
   chat: string | null
@@ -42,7 +44,7 @@ declare module 'claude-code' {
       selected: Shaped<string | null>
       filter: Shaped<string | null>
       agents: Shaped<InboxItem[]>
-      view: Shaped<'waiting' | 'agents' | 'links'>
+      view: Shaped<'waiting' | 'agents' | 'links' | 'files'>
       links: Shaped<LinkEntry[]>
       sort: Shaped<string>
       catalog: Shaped<Catalog>

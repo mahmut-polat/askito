@@ -357,13 +357,57 @@ kbd {
   --kind-soft: var(--kind-task-soft);
 }
 
+.row.kind-file {
+  --kind: var(--kind-approval);
+  --kind-soft: var(--kind-approval-soft);
+}
+
+.row-head.link-head.file-head {
+  grid-template-columns: var(--row-icon) minmax(0, 1fr);
+}
+
+.file-head .link-actions {
+  grid-column: 2;
+  justify-content: start;
+}
+
+.file-title {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 550;
+  text-align: start;
+  cursor: pointer;
+}
+
+.file-title:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: line-through;
+}
+
+.file-path {
+  display: block;
+  margin-top: var(--space-1);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.file-folder {
+  color: var(--muted);
+}
+
 .row.kind-link {
   --kind: var(--kind-link);
   --kind-soft: var(--kind-link-soft);
 }
 
 .row-head.link-head {
-  grid-template-columns: var(--row-num) var(--row-icon) minmax(0, 1fr) auto;
+  /* No row numbers here: links are opened, never answered by number. */
+  grid-template-columns: var(--row-icon) minmax(0, 1fr) auto;
   cursor: default;
 }
 
@@ -394,11 +438,11 @@ kbd {
 
 @media (width < 640px) {
   .row-head.link-head {
-    grid-template-columns: var(--row-num) var(--row-icon) minmax(0, 1fr);
+    grid-template-columns: var(--row-icon) minmax(0, 1fr);
   }
 
   .link-actions {
-    grid-column: 3;
+    grid-column: 2;
     justify-content: start;
   }
 }

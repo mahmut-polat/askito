@@ -107,5 +107,15 @@
   "removeLink": "Listeden kaldır",
   "linkRemoved": "Bağlantı listeden kaldırıldı",
   "opensNewTab": "yeni sekmede açılır",
-  "linkAccount": "hesap: {name}"
+  "linkAccount": "hesap: {name}",
+  "tabFiles": "Dosyalar",
+  "headFiles": "dosya",
+  "emptyFilesTitle": "Henüz dosya yok",
+  "emptyFilesBody": "Ajanların bu bilgisayarda ürettiği video, rapor ve belgeler burada toplanır. Tıklayınca dosya ya da bulunduğu klasör açılır.",
+  "openFile": "Aç",
+  "revealFile": "Klasörde göster",
+  "copyPath": "Yolu kopyala",
+  "fileMissing": "Dosya artık yerinde değil",
+  "announceOpened": "Dosya açıldı",
+  "announceRevealed": "Klasör açıldı"
 }

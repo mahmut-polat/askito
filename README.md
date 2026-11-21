@@ -50,7 +50,7 @@ Chats post three kinds of item:
 | Approval | Approve, Reject, or send a comment |
 | Your task | I did it, I can't do this, or send a comment |
 
-The Links tab keeps every page your chats published for you, such as artifacts, reports and previews. Click a title to open it in a new tab. In Claude Code a hook adds each published artifact by itself, and other tools add theirs with `askito link`. The same address published again updates its row, so the list does not fill with copies.
+The Links tab keeps every page your chats published for you, such as artifacts, reports and previews. Click a title to open it in a new tab. In Claude Code a hook adds each published artifact by itself, and other tools add theirs with `askito link`. The same address published again updates its row, so the list does not fill with copies. Files your chats make on this computer, such as videos, PDFs and reports, go to the Files tab the same way (`askito link "Title" ~/path/to/file`). There, Open starts the file in its usual app and Show in folder opens Finder or Explorer at it. Scripts and apps are only ever shown in their folder, and only the inbox page can ask for a file to be opened.
 
 Any item can be removed from the list, which also tells a waiting chat to drop the subject. Later takes an item off your Waiting list without closing it: the chat keeps waiting and the Later tab holds the item until you bring it back. Items move through five tabs: Waiting, Later, With chats, Done and Removed. You can reopen anything. The sidebar splits everything by project and counts what is waiting in each, and every row carries its project as a colored badge.
 
@@ -112,6 +112,7 @@ askito reply ID "Follow-up, puts the item back in Waiting"
 askito done ID "What happened"
 askito list --status open
 askito link "Title" URL  Add a page to the Links tab (the same URL updates it)
+askito link "Title" FILE Add a file to the Files tab
 askito links             List them; askito links import FILE reads a Markdown table
 askito unlink ID
 askito alias "Friendly name" /path/to/repo
