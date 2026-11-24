@@ -358,9 +358,9 @@ async function refresh() {
     state.links = links;
     state.directory = directory;
     keepSelection();
-    render();
+    liveRender();
   } catch {
-    render();
+    liveRender();
   }
 }
 
@@ -551,23 +551,69 @@ function resultOf(item) {
   return item.messages.filter((m) => m.kind === 'result' || m.from === 'agent').at(-1)?.text ?? null;
 }
 
+// The text the reader selected inside one item's body, kept here because pressing
+// the copy button can collapse the live selection before its click runs.
+let picked = { item: null, text: '' };
+const copyTimers = new WeakMap();
+
+function selectionInApp() {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || !selection.rangeCount) return null;
+  const range = selection.getRangeAt(0);
+  return app.contains(range.commonAncestorContainer) ? selection : null;
+}
+
+function trackSelection() {
+  const selection = selectionInApp();
+  const body = selection?.anchorNode?.parentElement?.closest('[data-copy-item] .body');
+  const owner = body?.closest('[data-copy-item]')?.dataset.copyItem ?? null;
+  picked = owner && body.contains(selection.focusNode) ? { item: owner, text: selection.toString().trim() } : { item: null, text: '' };
+  for (const button of app.querySelectorAll('.btn.copy')) {
+    if (button.dataset.copied === undefined) button.textContent = button.dataset.copyFor === picked.item && picked.text ? t('copySelection') : t('copy');
+  }
+}
+
+document.addEventListener('selectionchange', () => {
+  trackSelection();
+  if (pendingRender && !selectionInApp()) render();
+});
+
 function copyButton(item) {
-  return h(
+  const tip = h('span', { class: 'copy-tip', role: 'status' });
+  const button = h(
     'button',
     {
       type: 'button',
       class: 'btn copy',
+      'data-copy-for': item.id,
+      // Keep the reader's selection alive while the button is pressed.
+      onpointerdown: (event) => event.preventDefault(),
       onclick: async (event) => {
         const control = event.currentTarget;
-        await navigator.clipboard.writeText([item.title, item.body].filter(Boolean).join('\n\n'));
-        control.textContent = t('copied');
-        setTimeout(() => {
-          control.textContent = t('copy');
-        }, 1500);
+        const text = picked.item === item.id && picked.text ? picked.text : [item.title, item.body].filter(Boolean).join('\n\n');
+        let ok = true;
+        try {
+          await navigator.clipboard.writeText(text);
+        } catch {
+          ok = false;
+        }
+        clearTimeout(copyTimers.get(control));
+        control.dataset.copied = '';
+        control.textContent = ok ? t('copied') : t('copyFailed');
+        tip.textContent = control.textContent;
+        copyTimers.set(
+          control,
+          setTimeout(() => {
+            delete control.dataset.copied;
+            tip.textContent = '';
+            trackSelection();
+          }, 1500),
+        );
       },
     },
-    t('copy'),
+    picked.item === item.id && picked.text ? t('copySelection') : t('copy'),
   );
+  return h('span', { class: 'copy-wrap' }, button, tip);
 }
 
 function assignControls(item) {
@@ -749,7 +795,7 @@ function renderRow(item, index) {
   const detail = isOpen
     ? h(
         'div',
-        { class: 'detail' },
+        { class: 'detail', 'data-copy-item': item.id },
         item.body ? markdown(item.body) : null,
         copyButton(item),
         timeline(item),
@@ -1101,7 +1147,19 @@ function renderMain() {
   );
 }
 
+// A live update waits while the reader has text selected, or the redraw would wipe the selection.
+let pendingRender = false;
+
+function liveRender() {
+  if (selectionInApp()) {
+    pendingRender = true;
+    return;
+  }
+  render();
+}
+
 function render() {
+  pendingRender = false;
   // A live update must not steal the cursor from whoever is typing.
   const active = document.activeElement;
   const focusKey = active?.dataset?.fk;

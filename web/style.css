@@ -460,6 +460,21 @@ kbd {
   cursor: pointer;
 }
 
+/* Positioned so the visually hidden status text resolves against it, not the page. */
+.copy-wrap {
+  position: relative;
+  justify-self: start;
+}
+
+.copy-tip {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .btn.copy {
   justify-self: start;
   min-height: 32px;
