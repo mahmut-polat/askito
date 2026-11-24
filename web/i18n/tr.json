@@ -80,6 +80,8 @@
   "eventQuestion": "Sohbet soruyor",
   "copy": "Tümünü kopyala",
   "copySelection": "Seçileni kopyala",
+  "selectText": "Metni seç",
+  "showFormatted": "Biçimli göster",
   "copyFailed": "Kopyalanamadı",
   "copied": "Kopyalandı",
   "stateOrphaned": "Bunu takip eden sohbet yok",

@@ -80,6 +80,8 @@
   "eventQuestion": "Chat asks",
   "copy": "Copy all",
   "copySelection": "Copy selection",
+  "selectText": "Select text",
+  "showFormatted": "Show formatted",
   "copyFailed": "Copy failed",
   "copied": "Copied",
   "stateOrphaned": "No chat is following this",

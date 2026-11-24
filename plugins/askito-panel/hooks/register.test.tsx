@@ -202,6 +202,22 @@ test('copy puts the question on the clipboard', async ($, on) => {
   await ui.unmount()
 })
 
+test('select text shows the item in a field, where part of it can be selected', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'toggle-abc123' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect(await ui.find({ key: 'plain-text-abc123' })).toBeUndefined()
+  await ui.press({ key: 'plain-abc123' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  const field = await ui.find({ key: 'plain-text-abc123' })
+  expect(field?.props?.value).toBe('Run the migration?\n\nAdds one column.')
+  await ui.press({ key: 'plain-abc123' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect(await ui.find({ key: 'plain-text-abc123' })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('the title itself opens the row, with no separate open button', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount(PANE)

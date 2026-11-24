@@ -48,6 +48,8 @@ function kindSvg(kind: InboxItem['kind'] | 'link' | 'file') {
 
 const items = atom({ plugin: 'askito-panel', key: 'items' } as const, [], { shape: 'items-1' })
 const selected = atom({ plugin: 'askito-panel', key: 'selected' } as const, null, { shape: 'selected-1' })
+// The item whose text is shown in a field, where it can be selected and copied in part.
+const plainText = atom({ plugin: 'askito-panel', key: 'plainText' } as const, null, { shape: 'plainText-1' })
 const filter = atom({ plugin: 'askito-panel', key: 'filter' } as const, null, { shape: 'filter-1' })
 const agents = atom({ plugin: 'askito-panel', key: 'agents' } as const, [], { shape: 'agents-1' })
 const view = atom({ plugin: 'askito-panel', key: 'view' } as const, 'waiting', { shape: 'view-1' })
@@ -293,7 +295,9 @@ export const register: Register = on => {
       </Button>
     )
 
-    // Panel text cannot be selected, so the question gets a copy button.
+    // Panel text cannot be selected; a field can. "Select text" shows the item's text in a
+    // field, where any part can be selected and copied, and "Copy all" takes the whole item.
+    const plain = await read($, plainText)
     const copyButton = (item: InboxItem) => (
       <Button
         key={`copy-${item.id}`}
@@ -304,6 +308,30 @@ export const register: Register = on => {
         }}
       />
     )
+    const plainButton = (item: InboxItem) =>
+      item.body ? (
+        <Button
+          key={`plain-${item.id}`}
+          dimColor
+          label={plain === item.id ? t('showFormatted') : t('selectText')}
+          onPress={() => void update($, plainText, () => (plain === item.id ? null : item.id))}
+        />
+      ) : null
+    const bodyView = (item: InboxItem) => {
+      if (!item.body) return null
+      if (plain !== item.id) return <Markdown text={item.body} />
+      const text = [item.title, item.body].join('\n\n')
+      return (
+        <Input
+          key={`plain-text-${item.id}`}
+          value={text}
+          rows={Math.min(24, Math.max(4, text.split('\n').length))}
+          submitLabel={t('copy')}
+          // Enter copies the whole text; typing here changes nothing in the item.
+          onSubmit={(_value, e) => void $.ui.copy({ text, surface: e.surface }).then(() => $.ui.toast(t('copied')))}
+        />
+      )
+    }
 
     const detail = (item: InboxItem) => {
       const comment = () => drafts[item.id]?.trim() || undefined
@@ -334,7 +362,7 @@ export const register: Register = on => {
 
       return (
         <Box flexDirection="column" gap="sm" marginTop="sm" paddingLeft="xs">
-          {item.body ? <Markdown text={item.body} /> : null}
+          {bodyView(item)}
           <Text size="caption" dimColor>
             {item.agentWaiting ? t('chatWaiting') : t('chatAway')}
           </Text>
@@ -361,6 +389,7 @@ export const register: Register = on => {
           <Box flexDirection="row" flexWrap="wrap" gap="sm" alignItems="center">
             {actions}
             <Box flexGrow={1} />
+            {plainButton(item)}
             {copyButton(item)}
             <Button key={`later-${item.id}`} variant="secondary" label={t('later')} onPress={() => void act($, item.id, 'later', { later: true })} />
             {remove}
@@ -376,13 +405,14 @@ export const register: Register = on => {
 
     const agentDetail = (item: InboxItem) => (
       <Box flexDirection="column" gap="xs" marginTop="sm" paddingLeft="xs">
-        {item.body ? <Markdown text={item.body} /> : null}
+        {bodyView(item)}
         {eventLines(item, t).map(line => (
           <Text size="caption">{line}</Text>
         ))}
         <Box flexDirection="row" flexWrap="wrap" gap="sm" alignItems="center" marginTop="xs">
           <Button key={`complete-${item.id}`} variant="primary" label={t('complete')} onPress={() => void act($, item.id, 'close', {})} />
           <Button key={`change-${item.id}`} variant="secondary" label={t('changeAnswer')} onPress={() => void act($, item.id, 'reopen', {})} />
+          {plainButton(item)}
           {copyButton(item)}
         </Box>
       </Box>

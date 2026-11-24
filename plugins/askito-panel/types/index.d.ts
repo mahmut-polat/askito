@@ -42,6 +42,7 @@ declare module 'claude-code' {
     'askito-panel': {
       items: Shaped<InboxItem[]>
       selected: Shaped<string | null>
+      plainText: Shaped<string | null>
       filter: Shaped<string | null>
       agents: Shaped<InboxItem[]>
       view: Shaped<'waiting' | 'agents' | 'links' | 'files'>
