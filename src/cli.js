@@ -11,7 +11,7 @@ import { parseLinkTable } from './links.js';
 import { runMcp } from './mcp.js';
 import { filePath, readConfig, VERSION, writeConfig } from './paths.js';
 import { serve } from './server.js';
-import { rulesBlock, runSetup, runUninstall } from './setup.js';
+import { rulesBlock, runSetup, runUninstall, setWritingLanguage, WRITING_LANGUAGES, writingLanguage } from './setup.js';
 
 const EXIT_DISMISSED = 3;
 const EXIT_TIMEOUT = 4;
@@ -25,6 +25,7 @@ Set up
   askito open [--url]             Open the inbox in your browser, or print its link
   askito status | start | stop
   askito alias "Name" [path]      Show a repository under a friendlier project name
+  askito language [en|tr|de|...]  Show or set the language agents write questions in
 
 Online access (optional)
   askito login [--server URL]     Pair this computer with askito.net to answer from any device
@@ -172,6 +173,16 @@ export async function main(argv) {
       return 0;
     case 'hook':
       return runHook(rest[0]);
+    case 'language': {
+      // The language agents write questions in. The inbox page keeps its own.
+      if (!rest[0]) {
+        print(writingLanguage());
+        return 0;
+      }
+      setWritingLanguage(rest[0]).forEach((line) => print(line));
+      print(`agents now write questions in ${WRITING_LANGUAGES[rest[0]]}`);
+      return 0;
+    }
     case 'start':
       await ensureServer();
       print(`running at http://127.0.0.1 (data in ${filePath('')})`);

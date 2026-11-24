@@ -7,6 +7,7 @@ import path from 'node:path';
 import { Sync } from './cloud.js';
 import { isRunnable, openCommand } from './links.js';
 import { notify } from './notify.js';
+import { setWritingLanguage, WRITING_LANGUAGES, writingLanguage } from './setup.js';
 import { agentToken, ensureHome, filePath, getPort, PACKAGE_ROOT, readConfig, uiToken, VERSION } from './paths.js';
 import { HttpError, isResolved, Store } from './store.js';
 
@@ -221,6 +222,19 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       const body = await readJson(req);
       store.mergeProject(body.from, body.to);
       return sendJson(res, 200, store.directory());
+    }
+
+    if (route === 'GET /api/settings') {
+      require_(who, 'human');
+      return sendJson(res, 200, { writingLanguage: writingLanguage(), writingLanguages: Object.keys(WRITING_LANGUAGES) });
+    }
+
+    if (route === 'POST /api/settings') {
+      require_(who, 'human');
+      const body = await readJson(req);
+      if (!WRITING_LANGUAGES[body.writingLanguage]) throw new HttpError(400, 'invalid_request', 'unknown language');
+      setWritingLanguage(body.writingLanguage);
+      return sendJson(res, 200, { writingLanguage: writingLanguage() });
     }
 
     if (route === 'GET /api/links') {

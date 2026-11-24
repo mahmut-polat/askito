@@ -1,7 +1,7 @@
 {
   "projects": "Projeler",
   "allProjects": "Tüm projeler",
-  "language": "Dil",
+  "language": "Sayfa dili",
   "theme": "Tema",
   "themeAuto": "Sistem",
   "themeLight": "Açık",
@@ -121,5 +121,7 @@
   "copyPath": "Yolu kopyala",
   "fileMissing": "Dosya artık yerinde değil",
   "announceOpened": "Dosya açıldı",
-  "announceRevealed": "Klasör açıldı"
+  "announceRevealed": "Klasör açıldı",
+  "writingLanguage": "Soruların dili",
+  "writingLanguageSaved": "Kaydedildi. Sohbetler yeni soruları bu dilde yazacak."
 }

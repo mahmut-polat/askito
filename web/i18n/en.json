@@ -1,7 +1,7 @@
 {
   "projects": "Projects",
   "allProjects": "All projects",
-  "language": "Language",
+  "language": "Page language",
   "theme": "Theme",
   "themeAuto": "System",
   "themeLight": "Light",
@@ -121,5 +121,7 @@
   "copyPath": "Copy path",
   "fileMissing": "The file is no longer there",
   "announceOpened": "File opened",
-  "announceRevealed": "Folder opened"
+  "announceRevealed": "Folder opened",
+  "writingLanguage": "Chats write questions in",
+  "writingLanguageSaved": "Saved. Chats write new questions in this language."
 }

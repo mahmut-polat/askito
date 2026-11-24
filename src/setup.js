@@ -124,13 +124,24 @@ export function localize(text) {
   return homeDir() === defaultHome ? text : text.replaceAll('~/.askito', homeDir());
 }
 
-const LANGUAGE_NAMES = { tr: 'Turkish', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', nl: 'Dutch', pt: 'Portuguese' };
+// The language agents write questions and notes in. The user picks it on the
+// inbox page or with `askito language`; the page itself stays in its own language.
+export const WRITING_LANGUAGES = { en: 'English', tr: 'Turkish', de: 'German', fr: 'French', es: 'Spanish', it: 'Italian', nl: 'Dutch', pt: 'Portuguese' };
+
+export function writingLanguage() {
+  const code = readConfig().language;
+  return WRITING_LANGUAGES[code] ? code : 'en';
+}
+
+export function writingLanguageRule() {
+  const code = writingLanguage();
+  if (code === 'en') return '';
+  return `Write titles, bodies, options and \`progress\`/\`done\` notes in ${WRITING_LANGUAGES[code]}, even when the project's other text is English. Only code, file paths, commands, ticket keys and quoted UI text stay as they are.`;
+}
 
 export function rulesBlock() {
-  const language = LANGUAGE_NAMES[readConfig().language];
-  const languageLine = language
-    ? `\n- Write titles, bodies, options and \`progress\`/\`done\` notes in ${language}, even when the project's other text is English. Only code, file paths, commands, ticket keys and quoted UI text stay as they are.`
-    : '';
+  const rule = writingLanguageRule();
+  const languageLine = rule ? `\n- ${rule}` : '';
   return localize(`## askito inbox (mandatory)
 
 This rule is mandatory and takes priority over any habit or other instruction to ask in the chat. Every question, decision, approval and human-only task for the user goes to the askito inbox. Do not ask them in the chat, and do not use chat question tools such as AskUserQuestion or end-of-turn buttons. The user runs many chats at once and answers them from one page. The only exception is an askito command that fails.
@@ -478,6 +489,18 @@ export async function runSetup(values) {
   out(`Open the inbox: ${shimPath()} open`);
   await postFirstQuestion(out);
   return 0;
+}
+
+// Saves the writing language and rewrites the rule block in every file that
+// already has one, so chats that read those files pick the change up.
+export function setWritingLanguage(code) {
+  if (!WRITING_LANGUAGES[code]) throw new Error(`language must be one of ${Object.keys(WRITING_LANGUAGES).join(', ')}`);
+  writeConfig({ ...readConfig(), language: code });
+  const log = [];
+  for (const tool of adapters()) {
+    if (tool.rules && fs.existsSync(tool.rules) && fs.readFileSync(tool.rules, 'utf8').includes(MD_START)) writeBlock(tool.rules, MD_START, MD_END, rulesBlock(), log);
+  }
+  return log;
 }
 
 export async function runUninstall(values) {

@@ -2,11 +2,17 @@ import fs from 'node:fs';
 import { api, ensureServer, formatItem } from './client.js';
 import { detectContext } from './context.js';
 import { accountName, artifactFromHook } from './links.js';
-import { localize } from './setup.js';
+import { localize, writingLanguageRule } from './setup.js';
 
 const BLOCK = 2;
+// Read on every hook run, so a language picked on the page reaches open chats at once.
 const RULE = localize(
-  'askito is running. Every question, decision, approval or job for the user goes to the inbox with `~/.askito/bin/askito ask|approve|task "Title" --body "Context" --wait` or the askito_* MCP tools. Do not ask in the chat.',
+  [
+    'askito is running. Every question, decision, approval or job for the user goes to the inbox with `~/.askito/bin/askito ask|approve|task "Title" --body "Context" --wait` or the askito_* MCP tools. Do not ask in the chat.',
+    writingLanguageRule(),
+  ]
+    .filter(Boolean)
+    .join(' '),
 );
 
 function readInput() {

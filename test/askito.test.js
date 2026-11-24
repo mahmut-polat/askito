@@ -748,6 +748,22 @@ describe('end to end', () => {
       }
     });
 
+    test('the writing language the user picks reaches the hooks, and the page can change it', async () => {
+      assert.equal((await cli('language')).stdout.trim(), 'en');
+      assert.doesNotMatch(JSON.parse(hook('reminder', { cwd: fakeHome }).stdout).hookSpecificOutput.additionalContext, /Turkish/);
+      await cli('language', 'tr');
+      assert.match(JSON.parse(hook('reminder', { cwd: fakeHome }).stdout).hookSpecificOutput.additionalContext, /notes in Turkish/);
+      await assert.rejects(cli('language', 'xx'), /language must be one of/);
+      const ui = fs.readFileSync(path.join(home, 'ui.token'), 'utf8').trim();
+      const headers = { 'Content-Type': 'application/json', Cookie: `askito_ui=${ui}`, Origin: 'http://127.0.0.1:45991' };
+      const saved = await fetch('http://127.0.0.1:45991/api/settings', { method: 'POST', headers, body: JSON.stringify({ writingLanguage: 'en' }) });
+      assert.equal((await saved.json()).writingLanguage, 'en');
+      assert.equal((await cli('language')).stdout.trim(), 'en');
+      const agentToken = fs.readFileSync(path.join(home, 'agent.token'), 'utf8').trim();
+      const refused = await fetch('http://127.0.0.1:45991/api/settings', { headers: { Authorization: `Bearer ${agentToken}` } });
+      assert.equal(refused.status, 403);
+    });
+
     test('a chat cannot stop while it owes a report on an answer', async () => {
       const session = { env: { ...env, ASKITO_SESSION: 'follow-1' }, cwd: fakeHome };
       const posted = await run(process.execPath, [BIN, 'ask', 'Report back', '--project', 'demo'], session);

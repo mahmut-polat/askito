@@ -957,6 +957,35 @@ function renderLinkRow(link) {
   );
 }
 
+// The language agents write questions in, saved on this computer for every
+// chat. It is separate from the language of the page itself.
+function writingLanguageControl() {
+  if (!state.settings) return null;
+  const names = new Intl.DisplayNames([language], { type: 'language' });
+  const failed = state.error?.id === 'settings' ? h('p', { class: 'error', role: 'alert' }, state.error.message) : null;
+  return [failed, h(
+    'label',
+    {},
+    t('writingLanguage'),
+    h(
+      'select',
+      {
+        onchange: async (event) => {
+          try {
+            state.error = null;
+            state.settings = { ...state.settings, ...(await request('POST', '/api/settings', { writingLanguage: event.target.value })) };
+            live.textContent = t('writingLanguageSaved');
+          } catch {
+            state.error = { id: 'settings', message: t('errorGeneric') };
+          }
+          render();
+        },
+      },
+      state.settings.writingLanguages.map((code) => h('option', { value: code, selected: code === state.settings.writingLanguage }, names.of(code))),
+    ),
+  )];
+}
+
 function renderSide() {
   const counts = new Map();
   for (const item of state.items) {
@@ -1017,6 +1046,7 @@ function renderSide() {
           Object.entries(LANGUAGES).map(([code, name]) => h('option', { value: code, selected: code === language }, name)),
         ),
       ),
+      writingLanguageControl(),
       h(
         'label',
         {},
@@ -1203,6 +1233,7 @@ async function start() {
   // English unless the person picks another language here. The browser's own
   // language is not a choice; the key is new so an older pick does not stick.
   await loadLanguage(storage.get(LANGUAGE_KEY) ?? 'en');
+  state.settings = await request('GET', '/api/settings').catch(() => null);
   await refresh();
   render();
   new EventSource('/api/events').addEventListener('change', refresh);
