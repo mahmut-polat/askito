@@ -30,9 +30,11 @@ const ITEM = {
   createdAt: '2026-11-09T10:00:00.000Z',
 }
 
+const catalogs: string[] = []
+
 type Fetch = { url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }
 
-async function start($: any, on: any, options: { installed?: boolean; items?: object[]; agents?: object[]; links?: object[] } = {}) {
+async function start($: any, on: any, options: { installed?: boolean; items?: object[]; agents?: object[]; links?: object[]; config?: string } = {}) {
   const sent: Fetch[] = []
   let open: object[] = options.items ?? [ITEM]
   on('command.register', () => ({ value: { command: 'askito-panel' } }))
@@ -43,7 +45,7 @@ async function start($: any, on: any, options: { installed?: boolean; items?: ob
   on('env.get', (_: unknown, e: { name: string }) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
   on('fs.read', (_: unknown, e: { path: string }) => {
     if (options.installed === false) throw new Error('missing')
-    return { value: e.path.endsWith('ui.token') ? 'secret\n' : '{"language":"en"}' }
+    return { value: e.path.endsWith('ui.token') ? 'secret\n' : (options.config ?? '{"language":"en"}') }
   })
   on('http.fetch', (_: unknown, e: Fetch) => {
     if (e.init?.method === 'POST') {
@@ -52,6 +54,7 @@ async function start($: any, on: any, options: { installed?: boolean; items?: ob
       return { value: { status: 200, ok: true, headers: {}, text: '{}' } }
     }
     const list = e.url.includes('status=answered') ? (options.agents ?? []) : open
+    if (e.url.includes('/i18n/')) catalogs.push(e.url)
     const text = e.url.includes('/i18n/')
       ? JSON.stringify(WORDS)
       : e.url.includes('/api/links')
@@ -259,4 +262,16 @@ test('Files lists files on this computer, and Open asks askito to open one', asy
   await ui.press({ key: 'reveal-fil1' })
   expect(sent.at(-1)?.url).toContain('/api/links/fil1/reveal')
   await ui.unmount()
+})
+
+test('the panel is in English even when agents are told to write in Turkish', async ($, on) => {
+  catalogs.length = 0
+  await start($, on, { config: '{"language":"tr"}' })
+  expect(catalogs.at(-1)).toContain('/i18n/en.json')
+})
+
+test('the panel follows uiLanguage when the config names one', async ($, on) => {
+  catalogs.length = 0
+  await start($, on, { config: '{"language":"tr","uiLanguage":"tr"}' })
+  expect(catalogs.at(-1)).toContain('/i18n/tr.json')
 })

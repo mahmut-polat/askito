@@ -138,7 +138,8 @@ type Connection = { port: number; token: string; language?: string }
 async function connect($: EngineInterface): Promise<Connection | null> {
   const home = (await $.env.get('HOME')) || (await $.env.get('USERPROFILE'))
   const root = (await $.env.get('ASKITO_HOME')) || `${home}/.askito`
-  let config: { port?: number; language?: string } = {}
+  // `language` is what agents write in; `uiLanguage` is the panel's own wording.
+  let config: { port?: number; uiLanguage?: string } = {}
   try {
     config = JSON.parse(await $.fs.read(`${root}/config.json`))
   } catch {
@@ -149,8 +150,10 @@ async function connect($: EngineInterface): Promise<Connection | null> {
     const port = Number(await $.env.get('ASKITO_PORT')) || config.port || 4517
     // The desktop app only makes a link of https: or http://localhost.
     inboxHref = `http://localhost:${port}/login?t=${token}`
-    locale = config.language
-    return { port, token, language: config.language }
+    // English unless the config names another language for the interface.
+    const language = config.uiLanguage ?? 'en'
+    locale = language
+    return { port, token, language }
   } catch {
     return null
   }
@@ -189,8 +192,7 @@ function sortLinks<T extends { project: string; createdAt: string }>(list: T[], 
 }
 
 async function loadCatalog($: EngineInterface, link: Connection) {
-  const wanted = link.language ?? new Intl.DateTimeFormat().resolvedOptions().locale.slice(0, 2)
-  const language = ['en', 'tr'].includes(wanted) ? wanted : 'en'
+  const language = ['en', 'tr'].includes(link.language ?? '') ? link.language : 'en'
   const res = await request($, link, `/i18n/${language}.json`)
   if (!res.ok) return
   // Read every time: a stored copy from an older version shows new wording as raw keys.

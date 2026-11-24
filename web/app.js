@@ -2,6 +2,7 @@
 // textContent only and never assigns innerHTML.
 
 const LANGUAGES = { en: 'English', tr: 'Türkçe' };
+const LANGUAGE_KEY = 'askito.ui-language';
 const TABS = [
   { id: 'waiting', status: 'open', label: 'tabWaiting', head: 'headWaiting', empty: 'emptyWaiting' },
   { id: 'later', status: 'open', later: true, label: 'tabLater', head: 'headLater', empty: 'emptyLater' },
@@ -1008,7 +1009,7 @@ function renderSide() {
           'select',
           {
             onchange: async (event) => {
-              storage.set('askito.lang', event.target.value);
+              storage.set(LANGUAGE_KEY, event.target.value);
               await loadLanguage(event.target.value);
               render();
             },
@@ -1199,8 +1200,9 @@ async function start() {
   applyTheme(storage.get('askito.theme') ?? 'auto');
   state.sort = storage.get('askito.sort') ?? 'newest';
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(storage.get('askito.theme') ?? 'auto'));
-  const saved = storage.get('askito.lang');
-  await loadLanguage(saved ?? (navigator.language ?? 'en').slice(0, 2).toLowerCase());
+  // English unless the person picks another language here. The browser's own
+  // language is not a choice; the key is new so an older pick does not stick.
+  await loadLanguage(storage.get(LANGUAGE_KEY) ?? 'en');
   await refresh();
   render();
   new EventSource('/api/events').addEventListener('change', refresh);
