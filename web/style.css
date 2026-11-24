@@ -646,8 +646,13 @@ kbd {
 }
 
 .body {
-  max-width: 68ch;
+  min-inline-size: 0;
   overflow-wrap: anywhere;
+}
+
+/* Reading width for prose; tables may use the full column. */
+.body > :not(.table-wrap) {
+  max-inline-size: 68ch;
 }
 
 .body h3,
@@ -679,6 +684,108 @@ kbd {
 .body pre code {
   padding: 0;
   background: none;
+}
+
+.body .table-wrap {
+  max-inline-size: 100%;
+  margin: 0 0 var(--space-3);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  container-type: inline-size;
+  overflow-wrap: normal;
+}
+
+.body .table-wrap:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.body table {
+  inline-size: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.body th,
+.body td {
+  padding: var(--space-2) var(--space-3);
+  border-block-end: 1px solid var(--line);
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+
+/* The row label (a date, a name) stays on one line; other cells wrap at word breaks. */
+.body thead th,
+.body tbody th {
+  white-space: nowrap;
+}
+
+.body tbody tr:last-child > * {
+  border-block-end: 0;
+}
+
+.body thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.body tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  background: var(--bg);
+  font-weight: 600;
+}
+
+@container (width < 520px) {
+  .body table,
+  .body thead,
+  .body tbody,
+  .body tr,
+  .body th,
+  .body td {
+    display: block;
+  }
+
+  .body thead {
+    display: none;
+  }
+
+  .body tbody tr {
+    border-block-end: 1px solid var(--line);
+  }
+
+  .body tbody tr:last-child {
+    border-block-end: 0;
+  }
+
+  .body tbody th,
+  .body td {
+    position: static;
+    border: 0;
+    padding-block: var(--space-1);
+    white-space: normal;
+  }
+
+  .body tbody th {
+    padding-block-start: var(--space-2);
+    background: var(--surface);
+  }
+
+  .body td:last-child {
+    padding-block-end: var(--space-2);
+  }
+
+  .body td::before {
+    content: attr(data-label) ': ';
+    color: var(--muted);
+  }
 }
 
 .body a,

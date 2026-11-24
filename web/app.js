@@ -111,17 +111,66 @@ function inlineNodes(text) {
   return nodes;
 }
 
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+const TABLE_RULE = /^\s*\|(\s*:?-{3,}:?\s*\|)+\s*$/;
+
+function tableCells(line) {
+  return line.trim().slice(1, -1).split('|').map((cell) => cell.trim());
+}
+
+// A GitHub-style pipe table: header row, a |---| rule, then body rows.
+// Narrow containers stack each row into a block with the column name beside each value.
+function table(header, rows) {
+  return h(
+    'div',
+    { class: 'table-wrap', tabindex: '0', role: 'region', 'aria-label': header.join(', ') },
+    h(
+      'table',
+      {},
+      h('thead', {}, h('tr', {}, header.map((cell) => h('th', { scope: 'col' }, inlineNodes(cell))))),
+      h(
+        'tbody',
+        {},
+        rows.map((row) =>
+          h(
+            'tr',
+            {},
+            header.map((label, index) =>
+              index === 0
+                ? h('th', { scope: 'row' }, inlineNodes(row[index] ?? ''))
+                : h('td', { 'data-label': label }, inlineNodes(row[index] ?? '')),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 function markdown(source) {
   const root = h('div', { class: 'body' });
   const lines = source.split('\n');
   let list = null;
   let paragraph = [];
+  // Line breaks the writer typed stay line breaks: reports and logs are written line by line.
   const flush = () => {
-    if (paragraph.length) root.append(h('p', {}, inlineNodes(paragraph.join(' '))));
+    if (paragraph.length) {
+      root.append(h('p', {}, paragraph.flatMap((text, index) => (index ? [h('br'), ...inlineNodes(text)] : inlineNodes(text)))));
+    }
     paragraph = [];
   };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
+    if (TABLE_ROW.test(line) && TABLE_RULE.test(lines[i + 1] ?? '')) {
+      flush();
+      list = null;
+      const header = tableCells(line);
+      const rows = [];
+      for (i += 2; i < lines.length && TABLE_ROW.test(lines[i]); i += 1) rows.push(tableCells(lines[i]));
+      i -= 1;
+      root.append(table(header, rows));
+      continue;
+    }
     if (line.startsWith('```')) {
       flush();
       list = null;
