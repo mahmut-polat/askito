@@ -65,6 +65,51 @@ describe('store', () => {
     assert.throws(() => store.answer(item.id, { decision: 'rejected' }), /already been answered/);
   });
 
+  test('items are numbered from 1 and found by number or #number', () => {
+    const store = newStore();
+    const first = store.create({ title: 'One' });
+    const second = store.create({ title: 'Two' });
+    assert.equal(first.number, 1);
+    assert.equal(second.number, 2);
+    assert.equal(store.resolveId('2'), second.id);
+    assert.equal(store.resolveId('#2'), second.id);
+    assert.equal(store.resolveId(first.id), first.id);
+    assert.equal(store.get('#1').title, 'One');
+    assert.throws(() => store.get('99'), /no item/);
+  });
+
+  test('numbers survive a restart and the next item keeps counting', () => {
+    const file = path.join(tempDir(), 'items.json');
+    const store = new Store(file);
+    store.create({ title: 'One' });
+    store.create({ title: 'Two' });
+    store.flush();
+    const again = new Store(file);
+    assert.equal(again.create({ title: 'Three' }).number, 3);
+  });
+
+  test('items saved before numbers existed get them in the order they were asked', () => {
+    const file = path.join(tempDir(), 'items.json');
+    const seed = new Store(file);
+    const older = seed.create({ title: 'Older' });
+    const newer = seed.create({ title: 'Newer' });
+    seed.flush();
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    saved.items = saved.items.map(({ number, ...rest }) => ({ ...rest, createdAt: rest.id === older.id ? '2026-01-01T00:00:00.000Z' : '2026-02-01T00:00:00.000Z' }));
+    fs.writeFileSync(file, JSON.stringify(saved));
+    const store = new Store(file);
+    assert.equal(store.get(older.id).number, 1);
+    assert.equal(store.get(newer.id).number, 2);
+    store.flush();
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).items.every((item) => Number.isInteger(item.number)), true);
+  });
+
+  test('the chat line names an item by number with a link that opens it', () => {
+    const line = formatItem({ id: 'abc', number: 7, title: 'Go?', status: 'open', kind: 'approval', options: [], messages: [] });
+    assert.match(line, /^id: 7$/m);
+    assert.match(line, /#7$/m);
+  });
+
   test('a repeated key returns the same item', () => {
     const store = newStore();
     const first = store.create({ title: 'Go?', project: 'p', key: 'k' });
@@ -524,6 +569,16 @@ describe('server', () => {
     assert.equal(read.answer.comment, 'yes');
   });
 
+  test('an item is reached by its number, with or without #', async () => {
+    const item = await create({ kind: 'approval', title: 'By number' });
+    assert.ok(Number.isInteger(item.number));
+    assert.equal((await call('GET', `/api/items/${item.number}`, { headers: agent })).json().item.id, item.id);
+    assert.equal((await call('GET', `/api/items/%23${item.number}`, { headers: agent })).json().item.id, item.id);
+    assert.equal((await call('POST', `/api/items/${item.number}/answer`, { headers: human(), body: { decision: 'approved' } })).status, 200);
+    const result = (await call('GET', `/api/wait?ids=${item.number}&timeout=1`, { headers: agent })).json();
+    assert.equal(result.ready[0].id, item.id);
+  });
+
   test('a waiting agent gets the answer as soon as it is given', async () => {
     const item = await create({ title: 'Wait for me' });
     const started = Date.now();
@@ -679,6 +734,15 @@ describe('end to end', () => {
   test('wait exits with 4 when nothing arrives', async () => {
     const { stdout } = await cli('ask', 'Quiet one', '--project', 'demo');
     await assert.rejects(cli('wait', stdout.trim(), '--timeout', '1'), (err) => err.code === 4);
+  });
+
+  test('ask prints the number on stdout and the chat line with its link on stderr', async () => {
+    const { stdout, stderr } = await cli('ask', 'Numbered one', '--project', 'demo');
+    const number = stdout.trim();
+    assert.match(number, /^\d+$/);
+    assert.match(stderr, new RegExp(`askito #${number} "Numbered one" http://askito\\.localhost:\\d+/#${number}`));
+    const listed = (await cli('list', '--status', 'open')).stdout;
+    assert.match(listed, new RegExp(`^\\s*${number}\\b.*Numbered one`, 'm'));
   });
 
   test('open keeps the browser secret out of its output unless --url is given', async () => {

@@ -35,6 +35,18 @@ Use `--key <stable-id>` when you might retry, so the user gets one item instead 
 
 Ask one thing per item. Several questions or jobs mean several items, never one item with a list inside, because the user answers, sets aside and tracks each one on its own.
 
+## Item numbers
+
+Every item gets a number, counted up from 1: the inbox shows it as `#42`. `ask`, `approve` and `task` print a line like this:
+
+```text
+askito #42 "Which database should the reports use?" http://askito.localhost:4517/#42
+```
+
+Paste that line in the chat whenever you mention the item, so the user can find it. The link opens the inbox on that item, and `/askito-panel 42` opens it in the Claude panel. Never name an item any other way.
+
+Commands take the bare number, without `#`, because the shell reads `#` as the start of a comment: `askito wait 42`, `askito progress 42 "..."`, `askito done 42 "..."`. Wherever this guide says `ID`, use that number. Without `--wait`, `ask` prints only the number on stdout, so `ID=$(askito ask ...)` works.
+
 ## Get the answer
 
 Pick the first of these your tool supports:

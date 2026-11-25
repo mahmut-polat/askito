@@ -21,7 +21,7 @@
   --kind-task-soft: #efe5fa;
   --kind-link: #0f6e5a;
   --kind-link-soft: #dcf1ea;
-  --row-num: 24px;
+  --row-num: 44px;
   --row-icon: 36px;
   --font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -485,9 +485,10 @@ kbd {
 .row-num {
   padding-top: 6px;
   text-align: end;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   color: var(--muted);
 }
 

@@ -270,7 +270,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
 
     if (route === 'GET /api/wait') {
       require_(who, 'agent');
-      const ids = (searchParams.get('ids') ?? '').split(',').filter(Boolean);
+      const ids = (searchParams.get('ids') ?? '').split(',').filter(Boolean).map((ref) => store.resolveId(ref));
       if (!ids.length) throw new HttpError(400, 'invalid_request', 'ids is required');
       const requested = Number(searchParams.get('timeout') ?? 50);
       const seconds = Number.isFinite(requested) ? Math.min(Math.max(requested, 0), MAX_WAIT_SECONDS) : 50;
@@ -283,9 +283,11 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       return onShutdown();
     }
 
-    const match = pathname.match(/^\/api\/items\/([a-z0-9]+)(?:\/([a-z]+))?$/);
+    // An item is named by its id or its number, written 42 or #42.
+    const match = pathname.match(/^\/api\/items\/(?:%23|#)?([a-z0-9]+)(?:\/([a-z]+))?$/);
     if (!match) throw new HttpError(404, 'not_found', 'unknown route');
-    const [, id, action] = match;
+    const [, ref, action] = match;
+    const id = store.resolveId(ref);
 
     if (req.method === 'GET' && !action) {
       require_(who, 'agent', 'human');

@@ -132,6 +132,33 @@ export class Store extends EventEmitter {
       fs.renameSync(this.file, `${this.file}.corrupt-${Date.now()}`);
       this.items.clear();
     }
+    this.numberItems();
+  }
+
+  // Every item gets a short number (#42) that people can read and type. Items
+  // from before numbers existed get theirs in the order they were asked.
+  numberItems() {
+    const unnumbered = [...this.items.values()].filter((item) => !Number.isInteger(item.number)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    if (!unnumbered.length) return;
+    for (const item of unnumbered) item.number = this.nextNumber();
+    this.persist();
+  }
+
+  nextNumber() {
+    let highest = 0;
+    for (const item of this.items.values()) if (Number.isInteger(item.number) && item.number > highest) highest = item.number;
+    return highest + 1;
+  }
+
+  // Accepts the item's id, its number (42) or the number as people write it (#42).
+  resolveId(ref) {
+    const raw = String(ref ?? '').trim().replace(/^#/, '');
+    if (this.items.has(raw)) return raw;
+    if (/^\d+$/.test(raw)) {
+      const number = Number(raw);
+      for (const item of this.items.values()) if (item.number === number) return item.id;
+    }
+    return raw;
   }
 
   flush() {
@@ -162,7 +189,7 @@ export class Store extends EventEmitter {
   }
 
   get(id) {
-    const item = this.items.get(id);
+    const item = this.items.get(this.resolveId(id));
     if (!item) throw new HttpError(404, 'not_found', `no item with id ${id}`);
     return item;
   }
@@ -202,7 +229,7 @@ export class Store extends EventEmitter {
     }
 
     const now = new Date().toISOString();
-    const item = { id: newId(), ...fields, status: 'open', answer: null, deliveredAt: null, messages: [], createdAt: now, updatedAt: now };
+    const item = { id: newId(), number: this.nextNumber(), ...fields, status: 'open', answer: null, deliveredAt: null, messages: [], createdAt: now, updatedAt: now };
     this.items.set(item.id, item);
     this.changed('created', item);
     return item;

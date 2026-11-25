@@ -51,6 +51,8 @@ const selected = atom({ plugin: 'askito-panel', key: 'selected' } as const, null
 // The item whose text is shown in a field, where it can be selected and copied in part.
 const plainText = atom({ plugin: 'askito-panel', key: 'plainText' } as const, null, { shape: 'plainText-1' })
 const filter = atom({ plugin: 'askito-panel', key: 'filter' } as const, null, { shape: 'filter-1' })
+// What the search field holds: a number such as 42 or #42, or words from a title.
+const query = atom({ plugin: 'askito-panel', key: 'query' } as const, '', { shape: 'query-1' })
 const agents = atom({ plugin: 'askito-panel', key: 'agents' } as const, [], { shape: 'agents-1' })
 const view = atom({ plugin: 'askito-panel', key: 'view' } as const, 'waiting', { shape: 'view-1' })
 const sortMode = atom({ plugin: 'askito-panel', key: 'sort' } as const, 'newest', { shape: 'sort-1' })
@@ -241,9 +243,36 @@ async function act($: EngineInterface, id: string, action: 'answer' | 'dismiss' 
   await refresh($)
 }
 
+function itemNumber(item: InboxItem) {
+  return item.number ? `#${item.number}` : ''
+}
+
+function matches(item: InboxItem, text: string) {
+  const wanted = text.trim().replace(/^#/, '').toLocaleLowerCase()
+  if (!wanted) return true
+  if (/^\d+$/.test(wanted)) return String(item.number) === wanted
+  return [item.title, item.body, item.project, item.chat].some(field => field?.toLocaleLowerCase().includes(wanted))
+}
+
+// Opens one item by its number (42 or #42) in whichever list holds it.
+async function openItem($: EngineInterface, ref: string) {
+  const wanted = ref.trim().replace(/^#/, '')
+  if (!wanted) return null
+  const find = (list: InboxItem[]) => list.find(item => String(item.number) === wanted || item.id === wanted)
+  const waiting = find(await read($, items))
+  const withChat = waiting ? undefined : find(await read($, agents))
+  const item = waiting ?? withChat
+  if (!item) return null
+  await update($, view, () => (waiting ? 'waiting' : 'agents'))
+  await update($, filter, () => null)
+  await update($, query, () => '')
+  await update($, selected, () => item.id)
+  return item
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'askito-panel', description: 'Show the askito inbox beside the chat' })
+    await $.command.register({ name: 'askito-panel', description: 'Show the askito inbox beside the chat. /askito-panel 42 opens item #42' })
     void $.ui.open({ id: PANE, title: 'Ask·ito' })
     await refresh($)
     $.clock.every(POLL_MS, () => void refresh($))
@@ -251,11 +280,15 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'askito-panel' }, async $ => {
+  on('command.run', { command: 'askito-panel' }, async ($, e) => {
     await $.ui.open({ id: PANE, title: 'Ask·ito' })
     await refresh($)
-
-    return { text: 'Ask·ito panel opened.' }
+    const ref = (e.args ?? '').trim()
+    if (!ref) return { text: 'Ask·ito panel opened.' }
+    const item = await openItem($, ref)
+    if (item) return { text: `Opened askito ${itemNumber(item)} "${item.title}".` }
+    const number = ref.replace(/^#/, '')
+    return { text: `askito #${number} is not waiting for you or with a chat. Run askito open ${number} to see it in the inbox.` }
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
@@ -263,6 +296,7 @@ export const register: Register = on => {
     const list = await read($, items)
     const picked = await read($, selected)
     const chosen = await read($, filter)
+    const searching = await read($, query)
     const others = await read($, agents)
     const saved = await read($, links)
     const sorting = await read($, sortMode)
@@ -286,7 +320,7 @@ export const register: Register = on => {
     const linkMode = mode === 'links' || mode === 'files'
     const projects = [...new Set((linkMode ? linkSource : source).map(item => item.project))].sort((a, b) => a.localeCompare(b))
     const active = chosen && projects.includes(chosen) ? chosen : null
-    const shown = active ? source.filter(item => item.project === active) : source
+    const shown = (active ? source.filter(item => item.project === active) : source).filter(item => matches(item, searching))
     // Nothing opens by itself: answering one item must not unfold the next.
     const openId = shown.some(item => item.id === picked) ? picked : null
     const groups = groupItems(sortItems(shown, sorting))
@@ -426,16 +460,15 @@ export const register: Register = on => {
       </Button>
     )
 
-    let number = 0
-    const row = (item: InboxItem, index: number) => {
+    const row = (item: InboxItem) => {
       const state = mode === 'agents' ? chatState(item, t) : null
       const isOpen = item.id === openId
       const toggle = () => void update($, selected, () => (isOpen ? null : item.id))
       return (
         <Box flexDirection="row" gap="sm" alignItems="flex-start">
-          <Box width={3} flexShrink={0} paddingTop="xs">
+          <Box width={5} flexShrink={0} paddingTop="xs">
             <Text tabular weight="semibold" dimColor>
-              {index}
+              {itemNumber(item)}
             </Text>
           </Box>
           <Svg source={kindSvg(item.kind)} alt={t(KIND_LABEL[item.kind])} width={32} height={32} />
@@ -568,6 +601,17 @@ export const register: Register = on => {
           options={['newest', 'oldest', 'urgent', 'project'].map(value => ({ value, label: t(`sort_${value}`) }))}
           onSelect={value => void update($, sortMode, () => value)}
         />
+        {linkMode ? null : (
+          <Input
+            key="search"
+            placeholder={t('searchPlaceholder')}
+            value={searching}
+            submitLabel={t('openItem')}
+            onInput={value => void update($, query, () => value)}
+            // Enter on a number opens that item even when it sits in the other list.
+            onSubmit={value => void openItem($, value)}
+          />
+        )}
         {linkMode ? (
           linksBody
         ) : shown.length ? (
@@ -586,17 +630,19 @@ export const register: Register = on => {
                   <Text size="caption" weight="semibold" dimColor>
                     {day.label}
                   </Text>
-                  {day.items.map(item => row(item, (number += 1)))}
+                  {day.items.map(item => row(item))}
                 </Box>
               ))}
             </Box>
           ))
         ) : (
           <Box flexDirection="column" gap="xs">
-            <Text weight="semibold">{t(mode === 'agents' ? 'emptyAgentsTitle' : 'emptyWaitingTitle')}</Text>
-            <Text size="caption" dimColor>
-              {t(mode === 'agents' ? 'emptyAgentsBody' : 'emptyWaitingBody')}
-            </Text>
+            <Text weight="semibold">{searching.trim() ? t('noMatch') : t(mode === 'agents' ? 'emptyAgentsTitle' : 'emptyWaitingTitle')}</Text>
+            {searching.trim() ? null : (
+              <Text size="caption" dimColor>
+                {t(mode === 'agents' ? 'emptyAgentsBody' : 'emptyWaitingBody')}
+              </Text>
+            )}
           </Box>
         )}
       </Box>

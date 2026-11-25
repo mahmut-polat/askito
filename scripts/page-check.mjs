@@ -5,14 +5,17 @@
 // screenshot. Chrome's own language is Turkish here on purpose, to prove the
 // page does not follow it.
 //
-// Usage: node scripts/page-check.mjs [--shot out.png] [--dark] [--width 1280]
+// With --item N it first posts three items and opens the page at /#N, then prints
+// the row numbers and which row the link opened.
+//
+// Usage: node scripts/page-check.mjs [--shot out.png] [--dark] [--width 1280] [--item 2]
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-const { values } = parseArgs({ options: { shot: { type: 'string' }, dark: { type: 'boolean' }, width: { type: 'string', default: '1280' } } });
+const { values } = parseArgs({ options: { shot: { type: 'string' }, dark: { type: 'boolean' }, width: { type: 'string', default: '1280' }, item: { type: 'string' } } });
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const chrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'askito-page-'));
@@ -25,7 +28,10 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let browser;
 async function main() {
   askito('start');
-  const url = askito('open', '--url');
+  if (values.item) {
+    for (const title of ['First question', 'Second question', 'Third question']) askito('ask', title, '--project', 'demo');
+  }
+  const url = askito('open', ...(values.item ? [values.item] : []), '--url');
   browser = spawn(chrome, ['--headless=new', '--disable-gpu', '--no-first-run', '--lang=tr-TR', `--user-data-dir=${path.join(work, 'chrome')}`, `--remote-debugging-port=${debugPort}`, `--window-size=${values.width},900`, 'about:blank'], { stdio: 'ignore' });
 
   let target;
@@ -68,6 +74,21 @@ async function main() {
   console.log(`page language: ${seen.lang}`);
   console.log(`tabs: ${seen.tabs.join(', ')}`);
   seen.settings.forEach((name, index) => console.log(`${name}: ${seen.offered[index].join(', ')}`));
+
+  if (values.item) {
+    await sleep(300);
+    const rows = await evaluate(`({
+      numbers: [...document.querySelectorAll('.row-num')].map((el) => el.textContent),
+      open: document.querySelector('.row.is-open .row-num')?.textContent ?? 'none',
+      openTitle: document.querySelector('.row.is-open .row-head')?.textContent ?? '',
+      focused: document.activeElement?.closest('.row')?.querySelector('.row-num')?.textContent ?? 'none',
+      address: location.pathname + location.hash,
+    })`);
+    console.log(`rows: ${rows.numbers.join(', ')}`);
+    console.log(`opened by the link: ${rows.open} (${rows.openTitle.slice(0, 60)})`);
+    console.log(`focused: ${rows.focused}`);
+    console.log(`address after opening: ${rows.address}`);
+  }
 
   if (values.shot) {
     const { data } = await send('Page.captureScreenshot', { format: 'png' });

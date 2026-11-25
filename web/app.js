@@ -287,6 +287,7 @@ function visibleItems() {
     if (!inTab(item, tab)) return false;
     if (state.project && item.project !== state.project) return false;
     if (!query) return true;
+    if (String(item.number) === query.replace(/^#/, '')) return true;
     return [item.title, item.body, item.chat, item.project].some((field) => field?.toLocaleLowerCase(language).includes(query));
   });
   const newest = (a, b) => b.createdAt.localeCompare(a.createdAt);
@@ -788,7 +789,7 @@ function renderRow(item, index) {
         }
       },
     },
-    h('span', { class: 'row-num' }, String(index + 1)),
+    h('span', { class: 'row-num' }, item.number ? `#${item.number}` : String(index + 1)),
     kindIcon(item.kind),
     h('span', { class: 'row-text' }, h('span', { class: 'row-title' }, item.title), meta, note ? h('span', { class: 'row-note' }, note) : null),
   );
@@ -1172,6 +1173,10 @@ function renderMain() {
           keepSelection();
           render();
         },
+        // Enter on a number such as 42 or #42 opens that item, whichever tab it is in.
+        onkeydown: (event) => {
+          if (event.key === 'Enter' && openItem(event.target.value)) event.preventDefault();
+        },
       }),
     ),
     content,
@@ -1207,6 +1212,30 @@ function render() {
   window.scrollTo(0, scroll);
 }
 
+// Opens one item by its number (42 or #42) or id: switches to its tab, clears
+// the filters that would hide it, unfolds it and moves the keyboard to it.
+function openItem(ref) {
+  const wanted = String(ref ?? '').trim().replace(/^#/, '');
+  if (!wanted) return false;
+  const item = state.items.find((entry) => String(entry.number) === wanted || entry.id === wanted);
+  if (!item) return false;
+  state.tab = TABS.find((tab) => !tab.links && inTab(item, tab))?.id ?? state.tab;
+  state.project = null;
+  state.query = '';
+  state.selected = item.id;
+  render();
+  const head = document.querySelector(`[data-item="${item.id}"] .row-head`);
+  head?.scrollIntoView({ block: 'center' });
+  head?.focus({ preventScroll: true });
+  return true;
+}
+
+// http://askito.localhost:4517/#42 opens item #42.
+function openFromAddress() {
+  const ref = decodeURIComponent(location.hash.slice(1));
+  if (ref && openItem(ref)) history.replaceState(null, '', location.pathname + location.search);
+}
+
 function moveSelection(step) {
   const items = groupItems(visibleItems()).flatMap((group) => group.days.flatMap((day) => day.items));
   if (!items.length) return;
@@ -1236,6 +1265,8 @@ async function start() {
   state.settings = await request('GET', '/api/settings').catch(() => null);
   await refresh();
   render();
+  openFromAddress();
+  addEventListener('hashchange', openFromAddress);
   new EventSource('/api/events').addEventListener('change', refresh);
   // Waiting-chat indicators expire on the server without an event.
   setInterval(() => {

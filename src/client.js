@@ -121,8 +121,18 @@ export function inboxUrl() {
   return `http://askito.localhost:${getPort()}/login?t=${uiToken()}`;
 }
 
+// The address that opens one item in the inbox page.
+export function itemLink(item) {
+  return `http://askito.localhost:${getPort()}/#${item.number ?? item.id}`;
+}
+
+// How agents name an item to the user in chat: askito #42 "Title".
+export function itemRef(item) {
+  return `askito #${item.number ?? item.id} "${item.title}"`;
+}
+
 export function formatItem(item) {
-  const lines = [`id: ${item.id}`, `title: ${item.title}`, `status: ${item.status}`];
+  const lines = [`id: ${item.number ?? item.id}`, `title: ${item.title}`, `status: ${item.status}`, `link: ${itemLink(item)}`];
   if (item.key) lines.push(`key: ${item.key}`);
   if (item.answer) {
     lines.push(`decision: ${item.answer.decision}`);

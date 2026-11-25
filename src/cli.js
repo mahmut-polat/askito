@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { cloudStatus, DEFAULT_SERVER, login, logout } from './cloud.js';
-import { api, ensureServer, formatItem, inboxUrl, status, stopServer, waitForItems } from './client.js';
+import { api, ensureServer, formatItem, inboxUrl, itemLink, itemRef, status, stopServer, waitForItems } from './client.js';
 import { detectContext } from './context.js';
 import { runHook } from './hooks.js';
 import { parseLinkTable } from './links.js';
@@ -22,7 +22,7 @@ Set up
   askito setup [--tools claude,codex,...] [--dry-run]
   askito uninstall [--purge]
   askito instructions             Print the rules to paste into any other AI tool
-  askito open [--url]             Open the inbox in your browser, or print its link
+  askito open [N] [--url]         Open the inbox in your browser (on item #N), or print its link
   askito status | start | stop
   askito alias "Name" [path]      Show a repository under a friendlier project name
   askito language [en|tr|de|...]  Show or set the language agents write questions in
@@ -55,6 +55,9 @@ Links (published artifacts, reports, previews the user opens again)
   askito links [--project NAME] [--removed] [--json]
   askito links import FILE         Add every address in a Markdown table
   askito unlink ID|URL
+
+ID is the item's number, such as 42 (the inbox shows it as #42). Tell the user
+about an item as: askito #42 "Title", with the link that ask and wait print.
 
 Exit codes for --wait and wait: 0 answered, 3 removed by the human, 4 timed out.
 `;
@@ -131,8 +134,11 @@ async function post(kind, title, values) {
     cwd: context.cwd,
     sessionId: context.session,
   });
+  // stdout carries only the number, so ID=$(askito ask ...) keeps working; the
+  // line to show the user goes to stderr.
+  if (!values.json) console.error(`${itemRef(item)} ${itemLink(item)}`);
   if (!values.wait) {
-    print(values.json ? JSON.stringify(item, null, 2) : item.id);
+    print(values.json ? JSON.stringify(item, null, 2) : String(item.number ?? item.id));
     return 0;
   }
   return outputResult(await waitForItems([item.id], { timeoutSeconds: Number(values.timeout ?? 0) }), values);
@@ -218,7 +224,9 @@ export async function main(argv) {
     }
     case 'open': {
       await ensureServer();
-      const url = inboxUrl();
+      // askito open 42 opens the page on item #42.
+      const target = rest[0]?.replace(/^#/, '');
+      const url = `${inboxUrl()}${target ? `#${encodeURIComponent(target)}` : ''}`;
       // The link holds the browser secret, so it stays out of agent transcripts by default.
       if (values.url) {
         print(url);
@@ -258,7 +266,7 @@ export async function main(argv) {
       if (values.status) query.set('status', values.status);
       if (values.project) query.set('project', values.project);
       const { items } = await api('GET', `/api/items?${query}`);
-      print(values.json ? JSON.stringify(items, null, 2) : items.map((i) => `${i.id}  ${i.status.padEnd(9)}  ${i.project}  ${i.title}`).join('\n') || 'empty');
+      print(values.json ? JSON.stringify(items, null, 2) : items.map((i) => `${String(i.number ?? i.id).padStart(4)}  ${i.status.padEnd(9)}  ${i.project}  ${i.title}`).join('\n') || 'empty');
       return 0;
     }
     case 'link': {

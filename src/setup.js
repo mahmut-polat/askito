@@ -148,6 +148,7 @@ This rule is mandatory and takes priority over any habit or other instruction to
 
 - Command: \`~/.askito/bin/askito\`, or the \`askito_*\` MCP tools.
 - Post: \`~/.askito/bin/askito ask "Title" --body "Context" --option "A" --option "B" --recommend 1 --chat "short name" --wait\`. Use \`approve\` for a go-ahead and \`task\` for something only the user can do.
+- Every item has a number, such as 42. In the chat, name an item only by the line \`ask\` prints: \`askito #42 "Title" http://askito.localhost:4517/#42\`. The link opens that item in the inbox, and \`/askito-panel 42\` opens it in the Claude panel. Commands take the bare number: \`askito wait 42\`, \`askito done 42 "what you did"\`. ID below means that number.
 - Write the title and body for someone who has not seen this chat.${languageLine}
 - One item per question, approval or task. Never bundle several into one item: the user answers, sets aside and tracks each one on its own.
 - Every page the user will want to open again (a published artifact, report, preview, shared document) goes to the Links tab: \`~/.askito/bin/askito link "Title" URL\` or \`askito_link\`. In Claude Code, published artifacts are added by a hook; check they show up.

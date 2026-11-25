@@ -56,9 +56,28 @@ The Links tab keeps every page your chats published for you, such as artifacts, 
 
 Any item can be removed from the list, which also tells a waiting chat to drop the subject. Later takes an item off your Waiting list without closing it: the chat keeps waiting and the Later tab holds the item until you bring it back. Items move through five tabs: Waiting, Later, With chats, Done and Removed. You can reopen anything. The sidebar splits everything by project and counts what is waiting in each, and every row carries its project as a colored badge.
 
-Answered items show whether the chat received the answer, what it is doing and what came of it, with a timeline on each item. A chat that goes quiet for 30 minutes is flagged. In Claude Code, a hook keeps a chat from ending its turn while it owes a report on an answer. Every row shows the date and time it was asked, and the list is grouped by project and then by day, newest first unless you pick another sort. Nothing opens until you open it. If a chat has gone away, its answer is offered to any other chat working in that project, which can take it over, so work does not get stuck. You can also assign an item to a specific chat, move it to another project, and map one project name onto another under Map projects. Rows are numbered, and each has its own icon and color for its kind, so a question and a job for you look different at a glance. Each open item says whether its chat is waiting right now or will collect your answer the next time it runs. New items update the tab title. With the page open, a browser notification appears after you turn it on in the sidebar. Linux and Windows also get a desktop notification from the server. The page opens in English and also comes in Turkish, in light and dark. It does not follow the browser's language; pick one under Page language. Separately, Chats write questions in sets the language your chats use for titles, explanations and notes. It is saved on this computer, reaches open Claude Code chats with their next message, and updates the rules file of every connected tool. The same setting is `askito language tr` on the command line. To add a language, drop a file in `web/i18n` and add one line each in `web/app.js` and `src/server.js`.
+Answered items show whether the chat received the answer, what it is doing and what came of it, with a timeline on each item. A chat that goes quiet for 30 minutes is flagged. In Claude Code, a hook keeps a chat from ending its turn while it owes a report on an answer. Every row shows the date and time it was asked, and the list is grouped by project and then by day, newest first unless you pick another sort. Nothing opens until you open it. If a chat has gone away, its answer is offered to any other chat working in that project, which can take it over, so work does not get stuck. You can also assign an item to a specific chat, move it to another project, and map one project name onto another under Map projects. Each row has its own icon and color for its kind, so a question and a job for you look different at a glance. Each open item says whether its chat is waiting right now or will collect your answer the next time it runs. New items update the tab title. With the page open, a browser notification appears after you turn it on in the sidebar. Linux and Windows also get a desktop notification from the server. The page opens in English and also comes in Turkish, in light and dark. It does not follow the browser's language; pick one under Page language. Separately, Chats write questions in sets the language your chats use for titles, explanations and notes. It is saved on this computer, reaches open Claude Code chats with their next message, and updates the rules file of every connected tool. The same setting is `askito language tr` on the command line. To add a language, drop a file in `web/i18n` and add one line each in `web/app.js` and `src/server.js`.
 
 Keyboard: `J` and `K` move, `1` to `9` pick an option, `Ctrl+Enter` or `Cmd+Enter` sends from the comment box.
+
+### Finding an item a chat mentions
+
+Every item gets a number when it is posted, counted up from 1, and the inbox shows it on the row as `#42`. The installed rule tells agents to mention an item in the chat only with the line askito prints when they post it:
+
+```text
+askito #42 "Which database should the reports use?" http://askito.localhost:4517/#42
+```
+
+There are four ways to get to it from there:
+
+| Where | What to do |
+|---|---|
+| The chat | Click the link. The inbox opens on that item. |
+| The inbox page | Type `42` or `#42` in the search box and press Enter. |
+| The Claude Code panel | Type `/askito-panel 42` in the chat, or type `42` in the panel's search box and press Enter. |
+| A terminal | Run `askito open 42`. |
+
+Items posted before numbers existed get theirs the first time the new version starts, in the order they were asked.
 
 ## How an answer reaches the chat
 
@@ -68,7 +87,7 @@ Coding tools can't be woken from the outside, so each chat has to be listening. 
 |---|---|
 | Run a background command and wake when it exits (Claude Code) | Runs `askito ask ... --wait` in the background and keeps working |
 | Call MCP tools | Calls `askito_ask`, then repeats `askito_wait` in rounds short enough for the client's tool timeout |
-| Only run foreground commands | Repeats `askito wait ID --timeout 100` |
+| Only run foreground commands | Repeats `askito wait 42 --timeout 100` |
 
 If the chat has already ended, your answer stays in the inbox. The next session in that repository runs `askito pickup`, finds it, and acts on it.
 
@@ -108,7 +127,7 @@ To add the panel by hand:
 
 3. Start a new Claude Code session. Sessions that were already open do not load the panel.
 
-The panel then opens by itself in each new session. If you close it, type `/askito-panel` in the chat to open it again. There is no command that closes it; use the close button on the panel. `askito uninstall` removes the panel too, on the same condition as setup. On Windows, or where `claude` is not on your PATH, run `claude plugin uninstall askito-panel@askito` yourself.
+The panel then opens by itself in each new session. If you close it, type `/askito-panel` in the chat to open it again, or `/askito-panel 42` to open it on item #42. The search box above the list takes a number or words from a title. There is no command that closes it; use the close button on the panel. `askito uninstall` removes the panel too, on the same condition as setup. On Windows, or where `claude` is not on your PATH, run `claude plugin uninstall askito-panel@askito` yourself.
 
 ### Chrome side panel
 
@@ -144,11 +163,13 @@ The test suite runs on macOS, Linux and Windows with Node 20, 22 and 24. Desktop
 askito ask "Title"       --body TEXT --option "Label::Description" --recommend 1 --wait
 askito approve "Title"   --body TEXT --urgent --wait
 askito task "Title"      --body TEXT --chat "short name" --wait
-askito wait ID           --timeout 100
+askito wait 42          --timeout 100
 askito pickup
-askito reply ID "Follow-up, puts the item back in Waiting"
-askito done ID "What happened"
+askito reply 42 "Follow-up, puts the item back in Waiting"
+askito progress 42 "What the chat is doing about the answer"
+askito done 42 "What happened"
 askito list --status open
+askito open 42           Open the inbox on item #42 (askito open --url prints the link)
 askito link "Title" URL  Add a page to the Links tab (the same URL updates it)
 askito link "Title" FILE Add a file to the Files tab
 askito links             List them; askito links import FILE reads a Markdown table
@@ -159,7 +180,7 @@ askito login             Pair with askito.net to answer from other devices
 askito logout
 ```
 
-`--wait` and `wait` exit with 0 when answered, 3 when you removed the item, and 4 on timeout. Projects come from the git repository, and every worktree of a repository lands in the same project. Run `askito --help` for the rest.
+`ask`, `approve` and `task` print the item's line (`askito #42 "Title"` and its link) on stderr. Without `--wait` they print only the number on stdout, so `ID=$(askito ask "Title")` works. Commands take the number without `#`, because the shell reads `#` as the start of a comment. `--wait` and `wait` exit with 0 when answered, 3 when you removed the item, and 4 on timeout. Projects come from the git repository, and every worktree of a repository lands in the same project. Run `askito --help` for the rest.
 
 ## Online access
 

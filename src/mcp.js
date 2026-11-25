@@ -1,5 +1,5 @@
 import readline from 'node:readline';
-import { api, formatItem, waitForItems } from './client.js';
+import { api, formatItem, itemLink, itemRef, waitForItems } from './client.js';
 import { detectContext } from './context.js';
 import { VERSION } from './paths.js';
 
@@ -11,7 +11,7 @@ const TOOLS = [
   {
     name: 'askito_ask',
     description:
-      'Put a question, an approval request or a task for the human into their inbox instead of asking in chat. Write title and body so they make sense with no chat history. Returns an id. Then call askito_wait, or carry on with other work and call askito_pickup later.',
+      'Put a question, an approval request or a task for the human into their inbox instead of asking in chat. Write title and body so they make sense with no chat history. Returns the number of the item (its id) and a link; tell the user about it as askito #42 "Title" with that link. Then call askito_wait, or carry on with other work and call askito_pickup later.',
     inputSchema: {
       type: 'object',
       required: ['title'],
@@ -114,7 +114,8 @@ const handlers = {
       cwd: context.cwd,
       sessionId: context.session,
     });
-    return `Posted to the inbox. id: ${item.id}\nCall askito_wait with this id to get the answer.`;
+    const id = item.number ?? item.id;
+    return `Posted to the inbox. id: ${id}\nTell the user in chat: ${itemRef(item)} ${itemLink(item)}\nCall askito_wait with this id to get the answer.`;
   },
   async askito_wait({ ids, timeout_seconds: seconds = 50 }) {
     if (!Array.isArray(ids) || !ids.length) throw new Error('ids is required');

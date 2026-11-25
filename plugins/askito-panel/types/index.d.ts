@@ -4,6 +4,8 @@ export type InboxMessage = { from: 'human' | 'agent'; kind?: string; decision?: 
 
 export type InboxItem = {
   id: string
+  // The number people see and type, such as 42 for #42.
+  number?: number
   kind: 'question' | 'approval' | 'task'
   title: string
   body: string | null
@@ -44,6 +46,7 @@ declare module 'claude-code' {
       selected: Shaped<string | null>
       plainText: Shaped<string | null>
       filter: Shaped<string | null>
+      query: Shaped<string>
       agents: Shaped<InboxItem[]>
       view: Shaped<'waiting' | 'agents' | 'links' | 'files'>
       links: Shaped<LinkEntry[]>
