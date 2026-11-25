@@ -922,6 +922,18 @@ describe('setup', () => {
     await cli('uninstall', '--purge');
   });
 
+  test('without the claude command, setup ends with the two commands that add the panel', async () => {
+    const { fakeHome, home, cli } = sandbox();
+    fs.mkdirSync(path.join(fakeHome, '.claude'));
+    const { stdout } = await cli('setup', '--tools', 'claude');
+    const lines = stdout.trimEnd().split('\n');
+    const start = lines.findIndex((line) => line.startsWith('SKIPPED Claude panel'));
+    assert.ok(start > lines.findIndex((line) => line.startsWith('Open the inbox')), 'the note comes after the rest of the output');
+    assert.equal(lines.at(-2).trim(), `claude plugin marketplace add "${path.join(home, 'app')}"`);
+    assert.equal(lines.at(-1).trim(), 'claude plugin install askito-panel@askito');
+    await cli('uninstall', '--purge');
+  });
+
   test('setup adds the Claude Code hooks, keeps the user\'s own, and uninstall restores the file', async () => {
     const { fakeHome, cli } = sandbox();
     fs.mkdirSync(path.join(fakeHome, '.claude'));

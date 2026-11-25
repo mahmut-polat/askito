@@ -32,6 +32,8 @@ The rest of this page writes the command as `askito`. Use the full path from thi
 
 In Claude Code, typing `/askito` opens it too. The page lives at `http://askito.localhost:4517`, which needs no DNS change or admin rights. After the first `askito open` you can type that address in your browser or bookmark it. The server starts by itself the first time a chat posts, or when you run `askito open`.
 
+If the setup output ends with lines that start with `SKIPPED Claude panel`, the panel beside the chat was not added. The inbox still works, and [Claude Code panel](#claude-code-panel) explains how to add the panel by hand on each system.
+
 Add `--dry-run` to see which files setup would touch, or `--tools claude,cursor` to choose. Setup copies each config file to `~/.askito/backups` before its first change, and it leaves alone any JSON file it cannot fully parse (it prints what to add by hand).
 
 The first item in a new inbox asks whether to tell the chats you already have open. Approve it and the next chat that collects the answer messages every other running session, in tools that can reach other sessions such as Claude Code. Elsewhere, restart those chats.
@@ -72,7 +74,43 @@ If the chat has already ended, your answer stays in the inbox. The next session 
 
 ## Side panels
 
-In Claude Code, setup installs a panel beside the chat with the open items, a filter for each project and the answer controls. It appears in sessions started after setup, and `/askito-panel` reopens it. On Windows setup skips this step, so run `claude plugin marketplace add %USERPROFILE%\.askito\app` and then `claude plugin install askito-panel@askito`.
+### Claude Code panel
+
+Claude Code can show askito in a panel beside the chat, with the open items, a filter for each project and the answer controls. The inbox page works without it.
+
+Setup adds the panel by itself on macOS and Linux when the `claude` command is on your PATH. A machine that has the Claude desktop app but not the Claude Code command line tool may not have that command. Setup never adds the panel on Windows. Whenever the panel is skipped, the last lines of the setup output start with `SKIPPED Claude panel` and give the two commands to run.
+
+To add the panel by hand:
+
+1. Check that the command line tool is there. `claude --version` should print a version. If it says the command is not found, install Claude Code's command line tool first.
+2. Run the two commands for your system.
+
+   macOS and Linux:
+
+   ```bash
+   claude plugin marketplace add ~/.askito/app
+   claude plugin install askito-panel@askito
+   ```
+
+   Windows Command Prompt:
+
+   ```bat
+   claude plugin marketplace add "%USERPROFILE%\.askito\app"
+   claude plugin install askito-panel@askito
+   ```
+
+   Windows PowerShell:
+
+   ```powershell
+   claude plugin marketplace add "$env:USERPROFILE\.askito\app"
+   claude plugin install askito-panel@askito
+   ```
+
+3. Start a new Claude Code session. Sessions that were already open do not load the panel.
+
+The panel then opens by itself in each new session. If you close it, type `/askito-panel` in the chat to open it again. There is no command that closes it; use the close button on the panel. `askito uninstall` removes the panel too, on the same condition as setup. On Windows, or where `claude` is not on your PATH, run `claude plugin uninstall askito-panel@askito` yourself.
+
+### Chrome side panel
 
 For claude.ai, chatgpt.com or any other tab, there is a Chrome side panel. Chrome does not let a program install an extension, so this one takes a manual step: open `chrome://extensions`, turn on Developer mode, choose Load unpacked, and pick `~/.askito/app/extensions/chrome`. Run `askito open` once with Chrome as your browser so the panel is signed in, then click the askito icon in the toolbar.
 
@@ -80,7 +118,7 @@ For claude.ai, chatgpt.com or any other tab, there is a Chrome side panel. Chrom
 
 | Tool | Setup writes |
 |---|---|
-| Claude Code | MCP server, skill, `~/.claude/CLAUDE.md` block |
+| Claude Code | MCP server, skill, `~/.claude/CLAUDE.md` block, hooks, panel (see [Claude Code panel](#claude-code-panel)) |
 | OpenAI Codex | MCP server, skill, `~/.codex/AGENTS.md` block |
 | Gemini CLI | MCP server, skill, `~/.gemini/GEMINI.md` block |
 | Cursor | MCP server, skill |

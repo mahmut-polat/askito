@@ -174,18 +174,36 @@ function uninstallClaudePanel(tool, log) {
   log.push('removed the Claude panel');
 }
 
-function installClaudePanel(tool, log) {
+// The two commands that add the panel by hand. The folder is written out in
+// full and quoted, so the same lines work in sh, Command Prompt and PowerShell.
+export function panelCommands() {
+  return [`claude plugin marketplace add "${appDir()}"`, 'claude plugin install askito-panel@askito'];
+}
+
+function panelNotice(reason) {
+  return [
+    `SKIPPED Claude panel: ${reason}`,
+    '  The inbox works without it. To add the panel beside the chat, run these two commands',
+    '  in a terminal where `claude --version` works, then start a new Claude Code session:',
+    ...panelCommands().map((line) => `    ${line}`),
+  ];
+}
+
+function installClaudePanel(tool, log, notices) {
   if (!useToolCli(tool)) {
-    log.push('Claude panel not installed: the claude command was not found. See the README.');
+    const reason = isWindows ? 'setup does not run the claude command on Windows.' : 'the claude command was not found on PATH.';
+    log.push('Claude panel not installed, see the note at the end');
+    notices.push(...panelNotice(reason));
     return;
   }
   uninstallClaudePanel(tool, []);
   try {
     claudeCli(['plugin', 'marketplace', 'add', appDir()]);
     claudeCli(['plugin', 'install', 'askito-panel@askito']);
-    log.push('Claude panel installed');
+    log.push('Claude panel installed. It shows in Claude Code sessions started from now on.');
   } catch (err) {
-    log.push(`Claude panel not installed: ${err.message}`);
+    log.push('Claude panel not installed, see the note at the end');
+    notices.push(...panelNotice(`claude plugin install failed (${err.message.split('\n')[0]}).`));
   }
 }
 
@@ -470,6 +488,8 @@ export async function runSetup(values) {
 
   await stopServer();
   const log = [];
+  // Steps the user still has to take, printed last so they are not lost in the log.
+  const notices = [];
   installApp(log);
   // Tools that only have a shell still find this shared skill folder.
   installSkill(inHome('.agents', 'skills'), log);
@@ -478,7 +498,7 @@ export async function runSetup(values) {
     (tool.skills ?? []).forEach((dir) => installSkill(dir, log));
     if (tool.rules) writeBlock(tool.rules, MD_START, MD_END, rulesBlock(), log);
     if (tool.settings) setClaudeHooks(tool.settings, log);
-    if (tool.panel) installClaudePanel(tool, log);
+    if (tool.panel) installClaudePanel(tool, log, notices);
   }
   log.forEach((line) => out(line));
 
@@ -488,6 +508,10 @@ export async function runSetup(values) {
   out('Restart open AI chats so they load askito.');
   out(`Open the inbox: ${shimPath()} open`);
   await postFirstQuestion(out);
+  if (notices.length) {
+    out('');
+    notices.forEach((line) => out(line));
+  }
   return 0;
 }
 
