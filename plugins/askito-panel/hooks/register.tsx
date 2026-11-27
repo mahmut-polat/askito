@@ -67,7 +67,6 @@ const status = atom({ plugin: 'askito-panel', key: 'status' } as const, 'loading
 const error = atom({ plugin: 'askito-panel', key: 'error' } as const, false, { shape: 'error-1' })
 const links = atom({ plugin: 'askito-panel', key: 'links' } as const, [], { shape: 'links-1' })
 const woken = atom({ plugin: 'askito-panel', key: 'woken' } as const, [], { shape: 'woken-1' })
-const olderOpen = atom({ plugin: 'askito-panel', key: 'olderOpen' } as const, false, { shape: 'olderOpen-1' })
 
 // A chat waiting with `askito wait` collects an answer within a second or two.
 // One that is not waiting is woken by its own panel after this long.
@@ -118,28 +117,21 @@ function groupItems<T extends { project: string; createdAt: string }>(items: T[]
     }))
 }
 
-const KIND_ORDER = ['question', 'approval', 'task', 'script'] as const
-const SECTION_LABEL = { question: 'sectionQuestion', approval: 'sectionApproval', task: 'sectionTask', script: 'sectionScript' } as const
-const OLDER_AFTER_MS = 7 * 86400000
-
-// Waiting items in one section per kind; anything older than a week goes to a folded section.
-function sectionItems<T extends { kind: InboxItem['kind']; createdAt: string }>(items: T[], now = Date.now()) {
-  const older = items.filter(item => now - new Date(item.createdAt).getTime() > OLDER_AFTER_MS)
-  const recent = items.filter(item => !older.includes(item))
-  const sections = KIND_ORDER.map(kind => ({ kind, label: SECTION_LABEL[kind], items: recent.filter(item => item.kind === kind) })).filter(
-    section => section.items.length,
-  )
-  return { sections, older }
+// The chat's full name as the Claude sidebar shows it, or the short name it gave.
+function chatName(item: { chatTitle?: string | null; chat?: string | null }) {
+  return item.chatTitle || item.chat || ''
 }
 
 function chatState(item: InboxItem, t: (key: string) => string) {
   if (!item.answer) return null
-  if (item.orphaned) return { label: t('stateOrphaned'), tone: 'warn' as const }
-  if (!item.deliveredAt) return { label: t('stateNotReceived'), tone: 'warn' as const }
+  // Say which chat, so a warning can be traced to a chat in the sidebar.
+  const named = (label: string) => (chatName(item) ? `${label} (“${chatName(item)}”)` : label)
+  if (item.orphaned) return { label: named(t('stateOrphaned')), tone: 'warn' as const }
+  if (!item.deliveredAt) return { label: named(t('stateNotReceived')), tone: 'warn' as const }
   const answeredAt = item.answer.at
   const last = (item.messages ?? []).filter(m => m.from === 'agent' && m.kind !== 'handover' && m.at >= answeredAt).at(-1)
   const minutes = Math.floor((Date.now() - Date.parse(last?.at ?? item.deliveredAt)) / 60000)
-  if (minutes >= STALL_MINUTES) return { label: t('stateStalled').replace('{mins}', String(minutes)), tone: 'warn' as const, note: last?.text ?? undefined }
+  if (minutes >= STALL_MINUTES) return { label: named(t('stateStalled').replace('{mins}', String(minutes))), tone: 'warn' as const, note: last?.text ?? undefined }
   if (last) return { label: t('stateWorking'), tone: 'ok' as const, note: last.text ?? undefined }
   return { label: t('stateReceived'), tone: 'info' as const }
 }
@@ -400,8 +392,8 @@ export const register: Register = on => {
     const shown = (active ? source.filter(item => item.project === active) : source).filter(item => matches(item, searching))
     // Nothing opens by itself: answering one item must not unfold the next.
     const openId = shown.some(item => item.id === picked) ? picked : null
-    const { sections, older } = sectionItems(sortItems(shown, sorting))
-    const showOlder = await read($, olderOpen)
+    // Everything waiting on the user in one list: by project, then by day.
+    const groups = groupItems(sortItems(shown, sorting))
     const projectName = (name: string) => (name === 'unsorted' ? t('unsorted') : name)
     const chip = (key: string, label: string, count: number, value: string | null) => (
       <Button key={`project-${key}`} variant={active === value ? 'primary' : 'secondary'} onPress={() => void update($, filter, () => value)}>
@@ -627,9 +619,19 @@ export const register: Register = on => {
                 ''
               )}
               <Text size="caption" dimColor>
-                {`${item.chatTitle || item.chat ? `  ${item.chatTitle || item.chat}` : ''}  ${stamp(item.createdAt)}`}
+                {`  ${stamp(item.createdAt)}`}
               </Text>
             </Button>
+            {chatName(item) ? (
+              <Button key={`toggle-chat-${item.id}`} plain onPress={toggle}>
+                <Text size="caption" dimColor>
+                  {`${t('chatLabel')}: `}
+                </Text>
+                <Text size="caption" weight="medium">
+                  {chatName(item)}
+                </Text>
+              </Button>
+            ) : null}
             {state ? (
               <Button key={`toggle-state-${item.id}`} plain onPress={toggle}>
                 <Text size="caption" weight="medium" color={TONE[state.tone]}>
@@ -642,7 +644,7 @@ export const register: Register = on => {
               <Button
                 key={`chat-${item.id}`}
                 plain
-                label={(words.openChat ?? 'Open the chat “{title}” in Claude').replace('{title}', item.chatTitle || item.chat || '')}
+                label={(words.openChat ?? 'Open the chat “{title}” in Claude').replace('{title}', chatName(item))}
                 onPress={() => void act($, item.id, 'chat', {})}
               />
             ) : null}
@@ -760,36 +762,24 @@ export const register: Register = on => {
           linksBody
         ) : shown.length ? (
           <Box flexDirection="column" gap="lg">
-            {sections.map(section => (
-              <Box key={`section-${section.kind}`} flexDirection="column" gap="md">
+            {groups.map(group => (
+              <Box key={`project-group-${group.project}`} flexDirection="column" gap="md">
                 <Box flexDirection="row" alignItems="center" gap="sm">
-                  <Text weight="bold">{t(section.label)}</Text>
+                  <Text weight="bold">{projectName(group.project)}</Text>
                   <Text size="caption" dimColor tabular>
-                    {section.items.length}
+                    {group.days.reduce((sum, day) => sum + day.items.length, 0)}
                   </Text>
                 </Box>
-                {section.items.map(item => row(item))}
+                {group.days.map(day => (
+                  <Box key={`day-${group.project}-${day.key}`} flexDirection="column" gap="md">
+                    <Text size="caption" weight="semibold" dimColor>
+                      {day.label}
+                    </Text>
+                    {day.items.map(item => row(item))}
+                  </Box>
+                ))}
               </Box>
             ))}
-            {older.length ? (
-              <Box key="section-older" flexDirection="column" gap="md">
-                <Box flexDirection="row" alignItems="center" gap="sm">
-                  <Text weight="bold" dimColor>
-                    {t('sectionOlder')}
-                  </Text>
-                  <Text size="caption" dimColor tabular>
-                    {older.length}
-                  </Text>
-                  <Button
-                    key="toggle-older"
-                    dimColor
-                    label={showOlder ? t('hideOlder') : t('showOlder')}
-                    onPress={() => void update($, olderOpen, open => !open)}
-                  />
-                </Box>
-                {showOlder ? older.map(item => row(item)) : null}
-              </Box>
-            ) : null}
           </Box>
         ) : (
           <Box flexDirection="column" gap="xs">

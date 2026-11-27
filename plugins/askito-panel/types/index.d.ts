@@ -67,8 +67,6 @@ declare module 'claude-code' {
       error: Shaped<boolean>
       // Answers already sent into this chat, as "id@answeredAt", so a reload does not send them twice.
       woken: Shaped<string[]>
-      // Whether the "older than a week" section is unfolded.
-      olderOpen: Shaped<boolean>
     }
   }
 }

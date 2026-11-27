@@ -20,12 +20,9 @@ const WORDS = {
   headWaiting: 'waiting for you',
   approve: 'Approve',
   panelOffline: 'askito is not running.',
-  sectionApproval: 'Approvals',
-  sectionQuestion: 'Questions',
-  sectionOlder: 'Older than a week',
-  showOlder: 'Show',
+  chatLabel: 'Chat',
 }
-// Recent, so the items land in their kind's section and not under "Older than a week".
+// Asked two hours ago, so the date line is today's.
 const ASKED = new Date(Date.now() - 2 * 3600_000)
 const DAY = 86400_000
 const ITEM = {
@@ -232,29 +229,35 @@ test('no item opens by itself, and only the pressed one opens', async ($, on) =>
   await ui.unmount()
 })
 
-test('rows sit in one section per kind, questions before approvals', async ($, on) => {
-  const question = { ...OTHER, id: 'q1', kind: 'question', title: 'Which colour?' }
-  await start($, on, { items: [ITEM, question] })
+test('questions, approvals and tasks share one list, grouped by project and newest first inside it', async ($, on) => {
+  const question = { ...ITEM, id: 'q1', kind: 'question', title: 'Which colour?', createdAt: new Date(ASKED.getTime() + 60_000).toISOString() }
+  const task = { ...OTHER, id: 't1', kind: 'task', title: 'Sign in to the store' }
+  await start($, on, { items: [ITEM, question, task] })
   const ui = await $.ui.mount(PANE)
-  const texts = (await ui.findAll({ type: 'Text' })).map(found => found.text)
+  const texts = (await ui.findAll({ type: 'Text' })).map(found => found.text?.trim())
   const at = (text: string) => texts.indexOf(text)
-  expect(at('Questions')).toBeGreaterThan(-1)
-  expect(at('Questions')).toBeLessThan(at('Which colour?'))
-  expect(at('Which colour?')).toBeLessThan(at('Approvals'))
-  expect(at('Approvals')).toBeLessThan(at('Run the migration?'))
+  // storefront holds the newest item, so its group comes first.
+  expect(at('storefront')).toBeLessThan(at('Sign in to the store'))
+  expect(at('Sign in to the store')).toBeLessThan(at('billing'))
+  expect(at('billing')).toBeLessThan(at('Which colour?'))
+  expect(at('Which colour?')).toBeLessThan(at('Run the migration?'))
+  expect(at('Approvals')).toBe(-1)
   await ui.unmount()
 })
 
-test('items older than a week are folded under Older until Show is pressed', async ($, on) => {
-  const old = { ...OTHER, id: 'old1', title: 'Old question', createdAt: new Date(Date.now() - 8 * DAY).toISOString() }
+test('old items stay in the list, under their own day', async ($, on) => {
+  const old = { ...ITEM, id: 'old1', title: 'Old question', createdAt: new Date(Date.now() - 8 * DAY).toISOString() }
   await start($, on, { items: [ITEM, old] })
   const ui = await $.ui.mount(PANE)
-  expect((await ui.find({ type: 'Text', text: 'Older than a week' }))?.text).toBe('Older than a week')
-  expect(await ui.find({ type: 'Text', text: 'Old question' })).toBeUndefined()
-  expect((await ui.find({ type: 'Text', text: 'Run the migration?' }))?.text).toBe('Run the migration?')
-  await ui.press({ key: 'toggle-older' })
-  for (let i = 0; i < 100; i += 1) await Promise.resolve()
   expect((await ui.find({ type: 'Text', text: 'Old question' }))?.text).toBe('Old question')
+  expect((await ui.find({ type: 'Text', text: 'Run the migration?' }))?.text).toBe('Run the migration?')
+  await ui.unmount()
+})
+
+test('every row names the chat that asked, by its full sidebar name', async ($, on) => {
+  await start($, on, { items: [{ ...ITEM, chatTitle: 'Fix the invoice totals in billing' }] })
+  const ui = await $.ui.mount(PANE)
+  expect((await ui.find({ type: 'Text', text: 'Fix the invoice totals in billing' }))?.text).toBe('Fix the invoice totals in billing')
   await ui.unmount()
 })
 
