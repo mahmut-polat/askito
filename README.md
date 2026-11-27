@@ -1,12 +1,12 @@
-<img src="web/icon.svg" width="72" alt="" />
+<img src="docs/logo.svg" width="240" alt="ask++" />
 
-# Ask·ito
+# ask++
 
 One local inbox for every question your AI coding chats need to ask you.
 
-When you run several chats at once, each one stops at a different moment to ask something, and you end up clicking through tabs to find who is blocked. With askito, chats post their questions, approvals and human-only jobs to one page, sorted by project. You answer there, and the chat that asked carries on.
+When you run several chats at once, each one stops at a different moment to ask something, and you end up clicking through tabs to find who is blocked. With ask++, chats post their questions, approvals and human-only jobs to one page, sorted by project. You answer there, and the chat that asked carries on.
 
-![The Ask·ito inbox](docs/inbox.jpg)
+![The ask++ inbox](docs/inbox.jpg)
 
 ## Install
 

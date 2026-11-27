@@ -188,7 +188,7 @@ export function createApp({
 
   store.on('change', ({ type, item }) => {
     broadcast();
-    if (type === 'created' || type === 'reply') sendNotification(`Ask·ito: ${item.project}`, item.title);
+    if (type === 'created' || type === 'reply') sendNotification(`ask++: ${item.project}`, item.title);
     if (type === 'answered') wakeLater(item.id, item.answer.at);
   });
 

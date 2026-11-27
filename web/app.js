@@ -327,7 +327,7 @@ function notifyNew(items) {
   for (const item of fresh) seenOpen.add(item.id);
   if (firstLoad || !document.hidden || !('Notification' in window) || Notification.permission !== 'granted') return;
   for (const item of fresh.slice(0, 3)) {
-    const note = new Notification(`Ask·ito: ${projectLabel(item.project)}`, { body: item.title, tag: item.id });
+    const note = new Notification(`ask++: ${projectLabel(item.project)}`, { body: item.title, tag: item.id });
     note.onclick = () => {
       window.focus();
       state.selected = item.id;
@@ -1134,7 +1134,7 @@ function renderSide() {
   // A project with only links still needs a place in the list to filter by.
   for (const link of state.links) if (!counts.has(link.project)) counts.set(link.project, 0);
   const total = [...counts.values()].reduce((sum, n) => sum + n, 0);
-  document.title = total ? `(${total}) Ask·ito` : 'Ask·ito';
+  document.title = total ? `(${total}) ask++` : 'ask++';
   const entry = (name, label, count) =>
     h(
       'li',
@@ -1161,7 +1161,7 @@ function renderSide() {
   return h(
     'aside',
     { class: 'side' },
-    h('div', { class: 'brand' }, h('img', { src: '/icon.svg', alt: '' }), h('span', {}, h('span', { class: 'brand-ask' }, 'Ask'), '·ito')),
+    h('div', { class: 'brand', role: 'img', 'aria-label': 'ask++' }, h('span', { class: 'brand-ask', 'aria-hidden': 'true' }, 'ask'), h('span', { class: 'brand-plus', 'aria-hidden': 'true' })),
     h('nav', { 'aria-label': t('projects') }, h('h2', {}, t('projects')), h('ul', { class: 'projects' }, entry(null, t('allProjects'), total), names.map((name) => entry(name, projectLabel(name), counts.get(name))))),
     h(
       'div',

@@ -350,7 +350,7 @@ async function openItem($: EngineInterface, ref: string) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'askito-panel', description: 'Show the askito inbox beside the chat. /askito-panel 42 opens item #42' })
-    void $.ui.open({ id: PANE, title: 'Ask·ito' })
+    void $.ui.open({ id: PANE, title: 'ask++' })
     await refresh($)
     $.clock.every(POLL_MS, () => void refresh($))
 
@@ -358,10 +358,10 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'askito-panel' }, async ($, e) => {
-    await $.ui.open({ id: PANE, title: 'Ask·ito' })
+    await $.ui.open({ id: PANE, title: 'ask++' })
     await refresh($)
     const ref = (e.args ?? '').trim()
-    if (!ref) return { text: 'Ask·ito panel opened.' }
+    if (!ref) return { text: 'ask++ panel opened.' }
     const item = await openItem($, ref)
     if (item) return { text: `Opened askito ${itemNumber(item)} "${item.title}".` }
     const number = ref.replace(/^#/, '')
