@@ -11,6 +11,7 @@ import { setWritingLanguage, WRITING_LANGUAGES, writingLanguage } from './setup.
 import { agentToken, ensureHome, filePath, getPort, PACKAGE_ROOT, readConfig, uiToken, VERSION } from './paths.js';
 import { startScript } from './run.js';
 import { HttpError, isResolved, Store } from './store.js';
+import { BEAT_FRESH_MS, startChat, WAKE_GRACE_MS } from './wake.js';
 
 const MAX_BODY = 256 * 1024;
 const MAX_WAIT_SECONDS = 120;
@@ -85,12 +86,33 @@ function launchFile(file, reveal) {
   execFile(command, args, () => {});
 }
 
-export function createApp({ store, port, tokens, onShutdown, sendNotification = notify, openFile = launchFile, runScript = startScript, cloud = null }) {
+function continueChat(item) {
+  if (process.env.ASKITO_WAKE === 'off') return null;
+  return startChat(item, { logDir: filePath('logs') });
+}
+
+export function createApp({
+  store,
+  port,
+  tokens,
+  onShutdown,
+  sendNotification = notify,
+  openFile = launchFile,
+  runScript = startScript,
+  wakeChat = continueChat,
+  wakeGraceMs = WAKE_GRACE_MS,
+  cloud = null,
+}) {
   const allowedHosts = new Set([`askito.localhost:${port}`, `127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
   const allowedOrigins = new Set([...allowedHosts].map((h) => `http://${h}`));
   const streams = new Set();
   const waiters = new Map();
   const running = new Map();
+  // When the askito panel inside each open chat last checked in, by session id.
+  const beats = new Map();
+  const wakeTimers = new Set();
+  // One continuation per answer, even if the answer event repeats.
+  const woken = new Set();
 
   // Only the person at the inbox starts a script; a chat can post one but never run it.
   function run(id) {
@@ -135,9 +157,39 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
     for (const stream of streams) stream.write('event: change\ndata: {}\n\n');
   };
 
+  const chatIsOpen = (sessionId) => Boolean(sessionId) && Date.now() - (beats.get(sessionId) ?? 0) < BEAT_FRESH_MS;
+
+  // A chat that is waiting, or open with the panel in it, gets the answer by
+  // itself. Any other chat is continued, or a new one is started, so the work
+  // goes on as soon as the person answers.
+  function wakeLater(id, answeredAt) {
+    const timer = setTimeout(() => {
+      wakeTimers.delete(timer);
+      let item;
+      try {
+        item = store.get(id);
+      } catch {
+        return;
+      }
+      const key = `${id}@${answeredAt}`;
+      if (woken.has(key) || item.status !== 'answered' || item.answer?.at !== answeredAt || item.deliveredAt) return;
+      if (waiting(id) || chatIsOpen(item.sessionId)) return;
+      woken.add(key);
+      try {
+        const started = wakeChat(item);
+        if (started) store.handover(id, started.resumed ? 'askito continued the chat with the answer.' : 'The chat was closed; askito started a new chat with the answer.');
+      } catch {
+        // A chat that cannot be started leaves the item as it was; the next chat in the project picks it up.
+      }
+    }, wakeGraceMs);
+    timer.unref?.();
+    wakeTimers.add(timer);
+  }
+
   store.on('change', ({ type, item }) => {
     broadcast();
     if (type === 'created' || type === 'reply') sendNotification(`Ask·ito: ${item.project}`, item.title);
+    if (type === 'answered') wakeLater(item.id, item.answer.at);
   });
 
   function caller(req) {
@@ -246,6 +298,16 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       store.touchSession({ id: session, project, chat: searchParams.get('chat') ?? undefined, agent: searchParams.get('agent') ?? undefined, chatTitle: searchParams.get('chatTitle') ?? undefined, chatLink: searchParams.get('chatLink') ?? undefined });
       const orphans = project ? store.orphans({ project, session, isWaited: waiting }).map(view) : [];
       return sendJson(res, 200, { ...store.followups(session), orphans });
+    }
+
+    // The askito panel inside an open chat says so every few seconds. That
+    // chat is woken by its panel, so askito does not start another one.
+    if (route === 'POST /api/sessions/beat') {
+      require_(who, 'human');
+      const body = await readJson(req);
+      if (typeof body.sessionId !== 'string' || !/^[\w-]{1,200}$/.test(body.sessionId)) throw new HttpError(400, 'invalid_request', 'sessionId is required');
+      beats.set(body.sessionId, Date.now());
+      return sendJson(res, 200, { ok: true });
     }
 
     if (route === 'GET /api/directory') {
@@ -433,7 +495,12 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
     });
   });
 
-  return { server, closeStreams: () => streams.forEach((s) => s.end()), stopScripts: () => running.forEach((handle) => handle.stop()) };
+  return {
+    server,
+    closeStreams: () => streams.forEach((s) => s.end()),
+    stopScripts: () => running.forEach((handle) => handle.stop()),
+    stopWakes: () => wakeTimers.forEach((timer) => clearTimeout(timer)),
+  };
 }
 
 export function serve() {

@@ -22,6 +22,8 @@ export type InboxItem = {
   chat: string | null
   chatTitle?: string | null
   chatLink?: string | null
+  // The Claude Code session that asked; its panel wakes it when the answer comes.
+  sessionId?: string | null
   account?: string | null
   agentWaiting: boolean
   createdAt: string
@@ -63,6 +65,10 @@ declare module 'claude-code' {
       catalog: Shaped<Catalog>
       status: Shaped<'loading' | 'ready' | 'offline'>
       error: Shaped<boolean>
+      // Answers already sent into this chat, as "id@answeredAt", so a reload does not send them twice.
+      woken: Shaped<string[]>
+      // Whether the "older than a week" section is unfolded.
+      olderOpen: Shaped<boolean>
     }
   }
 }

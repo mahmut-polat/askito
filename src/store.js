@@ -409,6 +409,15 @@ export class Store extends EventEmitter {
     return item;
   }
 
+  // askito itself handed the answer to a chat. It is not the chat's report,
+  // and the answer still counts as not collected until the chat collects it.
+  handover(id, note) {
+    const item = this.get(id);
+    item.messages.push({ from: 'agent', kind: 'handover', text: text(note, 'note', LIMITS.comment, { required: true }), at: new Date().toISOString() });
+    this.changed('handover', item);
+    return item;
+  }
+
   progress(id, input) {
     const item = this.get(id);
     if (item.status !== 'answered') throw new HttpError(409, 'not_answered', 'progress is for an answered item');

@@ -15,7 +15,19 @@ const PANE = {
   },
 } as const
 
-const WORDS = { kindApproval: 'Approval', headWaiting: 'waiting for you', approve: 'Approve', panelOffline: 'askito is not running.' }
+const WORDS = {
+  kindApproval: 'Approval',
+  headWaiting: 'waiting for you',
+  approve: 'Approve',
+  panelOffline: 'askito is not running.',
+  sectionApproval: 'Approvals',
+  sectionQuestion: 'Questions',
+  sectionOlder: 'Older than a week',
+  showOlder: 'Show',
+}
+// Recent, so the items land in their kind's section and not under "Older than a week".
+const ASKED = new Date(Date.now() - 2 * 3600_000)
+const DAY = 86400_000
 const ITEM = {
   id: 'abc123',
   kind: 'approval',
@@ -27,16 +39,24 @@ const ITEM = {
   project: 'billing',
   chat: 'invoices',
   agentWaiting: true,
-  createdAt: '2026-11-09T10:00:00.000Z',
+  createdAt: ASKED.toISOString(),
 }
 
 const catalogs: string[] = []
 
 type Fetch = { url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }
 
+const beats: string[] = []
+const prompts: string[] = []
+
 async function start($: any, on: any, options: { installed?: boolean; items?: object[]; agents?: object[]; links?: object[]; config?: string } = {}) {
   const sent: Fetch[] = []
   let open: object[] = options.items ?? [ITEM]
+  on('session.id', () => ({ value: 'this-chat' }))
+  on('prompt.submit', (_: unknown, e: { text: string }) => {
+    prompts.push(e.text)
+    return { text: e.text }
+  })
   on('command.register', () => ({ value: { command: 'askito-panel' } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('session.start', (_: unknown, e: { cwd: string }) => ({ cwd: e.cwd }))
@@ -48,6 +68,10 @@ async function start($: any, on: any, options: { installed?: boolean; items?: ob
     return { value: e.path.endsWith('ui.token') ? 'secret\n' : (options.config ?? '{"language":"en"}') }
   })
   on('http.fetch', (_: unknown, e: Fetch) => {
+    if (e.url.endsWith('/api/sessions/beat')) {
+      beats.push(JSON.parse(e.init?.body ?? '{}').sessionId)
+      return { value: { status: 200, ok: true, headers: {}, text: '{}' } }
+    }
     if (e.init?.method === 'POST') {
       sent.push(e)
       open = []
@@ -71,9 +95,28 @@ test('the pane numbers an open item and names its kind', async ($, on) => {
   const ui = await $.ui.mount(PANE)
   expect((await ui.find({ type: 'Text', text: /Run the migration/ }))?.text).toBe('Run the migration?')
   expect((await ui.find({ type: 'Text', text: '1' }))?.text).toBe('1')
-  expect((await ui.find({ type: 'Text', text: 'Approval' }))?.text).toBe('Approval')
+  expect((await ui.find({ type: 'Text', text: /^Approval$/ }))?.text).toBe('Approval')
   expect(await ui.find({ type: 'Svg' })).toBeDefined()
   await ui.unmount()
+})
+
+test('an answer for this chat wakes it once; other chats and collected answers are left alone', async ($, on) => {
+  const answeredAt = new Date(Date.now() - 10_000).toISOString()
+  const answer = { decision: 'option', choices: ['Ship'], comment: 'today', at: answeredAt }
+  const mine = { ...ITEM, id: 'mine1', number: 7, title: 'Ship it?', sessionId: 'this-chat', answer, deliveredAt: null }
+  const fresh = { ...ITEM, id: 'fresh1', number: 8, sessionId: 'this-chat', answer: { ...answer, at: new Date().toISOString() }, deliveredAt: null }
+  const other = { ...ITEM, id: 'other1', number: 9, sessionId: 'another-chat', answer, deliveredAt: null }
+  const collected = { ...ITEM, id: 'got1', number: 10, sessionId: 'this-chat', answer, deliveredAt: answeredAt }
+  prompts.length = 0
+  beats.length = 0
+  await start($, on, { agents: [mine, fresh, other, collected] })
+  expect(beats).toEqual(['this-chat'])
+  expect(prompts).toHaveLength(1)
+  expect(prompts[0]).toContain('askito #7 "Ship it?" was answered: option: Ship: "today".')
+  expect(prompts[0]).toContain('askito wait 7')
+  // The next poll finds the same answer still uncollected and does not send it again.
+  await $.command.run({ command: 'askito-panel', args: '' })
+  expect(prompts).toHaveLength(1)
 })
 
 test('approving posts the answer as the browser would', async ($, on) => {
@@ -131,13 +174,13 @@ test('items set aside stay out of the panel', async ($, on) => {
   await ui.unmount()
 })
 
-const OTHER = { ...ITEM, id: 'def456', title: 'Pick a colour', project: 'storefront', createdAt: '2026-11-09T11:00:00.000Z' }
+const OTHER = { ...ITEM, id: 'def456', title: 'Pick a colour', project: 'storefront', createdAt: new Date(ASKED.getTime() + 3600_000).toISOString() }
 
 test('every row shows its project as a badge', async ($, on) => {
   await start($, on, { items: [ITEM, OTHER] })
   const ui = await $.ui.mount(PANE)
-  expect((await ui.find({ type: 'Text', text: 'billing' }))?.text).toBe('billing')
-  expect((await ui.find({ type: 'Text', text: 'storefront' }))?.text).toBe('storefront')
+  expect((await ui.find({ type: 'Text', text: /billing/ }))?.text?.trim()).toBe('billing')
+  expect((await ui.find({ type: 'Text', text: /storefront/ }))?.text?.trim()).toBe('storefront')
   await ui.unmount()
 })
 
@@ -173,8 +216,8 @@ test('With chats shows whether the answer arrived and what the chat did', async 
 test('every row shows the date and time it was asked', async ($, on) => {
   await start($, on)
   const ui = await $.ui.mount(PANE)
-  // The day heading also names the month, so look for the time itself.
-  expect((await ui.find({ type: 'Text', text: /Nov.*\d{1,2}:\d{2}/ }))?.text).toMatch(/9 Nov|Nov 9/)
+  const day = new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short' }).format(ASKED)
+  expect((await ui.find({ type: 'Text', text: /\d{1,2}:\d{2}/ }))?.text).toContain(day)
   await ui.unmount()
 })
 
@@ -189,12 +232,29 @@ test('no item opens by itself, and only the pressed one opens', async ($, on) =>
   await ui.unmount()
 })
 
-test('rows are grouped by project and then by day', async ($, on) => {
-  await start($, on, { items: [ITEM, OTHER] })
+test('rows sit in one section per kind, questions before approvals', async ($, on) => {
+  const question = { ...OTHER, id: 'q1', kind: 'question', title: 'Which colour?' }
+  await start($, on, { items: [ITEM, question] })
   const ui = await $.ui.mount(PANE)
   const texts = (await ui.findAll({ type: 'Text' })).map(found => found.text)
-  expect(texts.filter(text => text?.trim() === 'billing').length).toBeGreaterThanOrEqual(2)
-  expect(texts.some(text => /Nov 9|today|yesterday/i.test(text ?? ''))).toBe(true)
+  const at = (text: string) => texts.indexOf(text)
+  expect(at('Questions')).toBeGreaterThan(-1)
+  expect(at('Questions')).toBeLessThan(at('Which colour?'))
+  expect(at('Which colour?')).toBeLessThan(at('Approvals'))
+  expect(at('Approvals')).toBeLessThan(at('Run the migration?'))
+  await ui.unmount()
+})
+
+test('items older than a week are folded under Older until Show is pressed', async ($, on) => {
+  const old = { ...OTHER, id: 'old1', title: 'Old question', createdAt: new Date(Date.now() - 8 * DAY).toISOString() }
+  await start($, on, { items: [ITEM, old] })
+  const ui = await $.ui.mount(PANE)
+  expect((await ui.find({ type: 'Text', text: 'Older than a week' }))?.text).toBe('Older than a week')
+  expect(await ui.find({ type: 'Text', text: 'Old question' })).toBeUndefined()
+  expect((await ui.find({ type: 'Text', text: 'Run the migration?' }))?.text).toBe('Run the migration?')
+  await ui.press({ key: 'toggle-older' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect((await ui.find({ type: 'Text', text: 'Old question' }))?.text).toBe('Old question')
   await ui.unmount()
 })
 

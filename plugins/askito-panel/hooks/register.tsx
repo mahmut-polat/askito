@@ -66,6 +66,13 @@ const catalog = atom({ plugin: 'askito-panel', key: 'catalog' } as const, {}, { 
 const status = atom({ plugin: 'askito-panel', key: 'status' } as const, 'loading', { shape: 'status-1' })
 const error = atom({ plugin: 'askito-panel', key: 'error' } as const, false, { shape: 'error-1' })
 const links = atom({ plugin: 'askito-panel', key: 'links' } as const, [], { shape: 'links-1' })
+const woken = atom({ plugin: 'askito-panel', key: 'woken' } as const, [], { shape: 'woken-1' })
+const olderOpen = atom({ plugin: 'askito-panel', key: 'olderOpen' } as const, false, { shape: 'olderOpen-1' })
+
+// A chat waiting with `askito wait` collects an answer within a second or two.
+// One that is not waiting is woken by its own panel after this long.
+const WAKE_AFTER_MS = 3000
+let sessionId: string | null | undefined
 
 const STALL_MINUTES = 30
 const TONE = { warn: '#e06070', ok: '#2fa36b', info: undefined } as const
@@ -109,6 +116,20 @@ function groupItems<T extends { project: string; createdAt: string }>(items: T[]
       project,
       days: [...days.entries()].map(([key, list]) => ({ key, label: dayLabel(key), items: list })),
     }))
+}
+
+const KIND_ORDER = ['question', 'approval', 'task', 'script'] as const
+const SECTION_LABEL = { question: 'sectionQuestion', approval: 'sectionApproval', task: 'sectionTask', script: 'sectionScript' } as const
+const OLDER_AFTER_MS = 7 * 86400000
+
+// Waiting items in one section per kind; anything older than a week goes to a folded section.
+function sectionItems<T extends { kind: InboxItem['kind']; createdAt: string }>(items: T[], now = Date.now()) {
+  const older = items.filter(item => now - new Date(item.createdAt).getTime() > OLDER_AFTER_MS)
+  const recent = items.filter(item => !older.includes(item))
+  const sections = KIND_ORDER.map(kind => ({ kind, label: SECTION_LABEL[kind], items: recent.filter(item => item.kind === kind) })).filter(
+    section => section.items.length,
+  )
+  return { sections, older }
 }
 
 function chatState(item: InboxItem, t: (key: string) => string) {
@@ -208,6 +229,37 @@ async function loadCatalog($: EngineInterface, link: Connection) {
   if (JSON.stringify(await read($, catalog)) !== JSON.stringify(next)) await update($, catalog, () => next)
 }
 
+function wakeText(item: InboxItem) {
+  const answer = item.answer
+  const parts = [answer?.decision, answer?.choices?.length ? answer.choices.join(', ') : '', answer?.comment ? `"${answer.comment}"` : ''].filter(Boolean)
+  const ref = item.number ?? item.id
+  return [
+    `askito #${ref} "${item.title}" was answered: ${parts.join(': ')}.`,
+    `Collect it with \`~/.askito/bin/askito wait ${ref}\`, then carry on with the work it was for.`,
+  ].join('\n')
+}
+
+// Tells askito this chat is open, and sends this chat's new answers in as its
+// next prompt, so the work goes on as soon as the person answers.
+async function wake($: EngineInterface, link: Connection, answered: InboxItem[]) {
+  if (sessionId === undefined) sessionId = await $.session.id().catch(() => null)
+  if (!sessionId) return
+  await request($, link, '/api/sessions/beat', { sessionId }).catch(() => null)
+  const sent = await read($, woken)
+  const now = Date.now()
+  const due = answered.filter(
+    item =>
+      item.sessionId === sessionId &&
+      item.answer &&
+      !item.deliveredAt &&
+      now - Date.parse(item.answer.at) >= WAKE_AFTER_MS &&
+      !sent.includes(`${item.id}@${item.answer.at}`),
+  )
+  if (!due.length) return
+  await update($, woken, list => [...list, ...due.map(item => `${item.id}@${item.answer?.at}`)].slice(-200))
+  for (const item of due) void $.prompt.submit({ text: wakeText(item) })
+}
+
 async function refresh($: EngineInterface) {
   try {
     const link = await connect($)
@@ -223,6 +275,7 @@ async function refresh($: EngineInterface) {
       ? (JSON.parse(answered.text) as { items: InboxItem[] }).items
       : await read($, agents)
     if (JSON.stringify(await read($, agents)) !== JSON.stringify(nextAgents)) await update($, agents, () => nextAgents)
+    if (answered.ok) await wake($, link, nextAgents)
     const linked = await request($, link, '/api/links')
     const nextLinks = linked.ok ? ((JSON.parse(linked.text) as { links?: LinkEntry[] }).links ?? []) : await read($, links)
     if (JSON.stringify(await read($, links)) !== JSON.stringify(nextLinks)) await update($, links, () => nextLinks)
@@ -347,7 +400,8 @@ export const register: Register = on => {
     const shown = (active ? source.filter(item => item.project === active) : source).filter(item => matches(item, searching))
     // Nothing opens by itself: answering one item must not unfold the next.
     const openId = shown.some(item => item.id === picked) ? picked : null
-    const groups = groupItems(sortItems(shown, sorting))
+    const { sections, older } = sectionItems(sortItems(shown, sorting))
+    const showOlder = await read($, olderOpen)
     const projectName = (name: string) => (name === 'unsorted' ? t('unsorted') : name)
     const chip = (key: string, label: string, count: number, value: string | null) => (
       <Button key={`project-${key}`} variant={active === value ? 'primary' : 'secondary'} onPress={() => void update($, filter, () => value)}>
@@ -705,26 +759,38 @@ export const register: Register = on => {
         {linkMode ? (
           linksBody
         ) : shown.length ? (
-          groups.map(group => (
-            <Box flexDirection="column" gap="md">
-              {projects.length > 1 && !active ? (
+          <Box flexDirection="column" gap="lg">
+            {sections.map(section => (
+              <Box key={`section-${section.kind}`} flexDirection="column" gap="md">
                 <Box flexDirection="row" alignItems="center" gap="sm">
-                  <Text weight="bold">{projectName(group.project)}</Text>
+                  <Text weight="bold">{t(section.label)}</Text>
                   <Text size="caption" dimColor tabular>
-                    {group.days.reduce((sum, day) => sum + day.items.length, 0)}
+                    {section.items.length}
                   </Text>
                 </Box>
-              ) : null}
-              {group.days.map(day => (
-                <Box flexDirection="column" gap="md">
-                  <Text size="caption" weight="semibold" dimColor>
-                    {day.label}
+                {section.items.map(item => row(item))}
+              </Box>
+            ))}
+            {older.length ? (
+              <Box key="section-older" flexDirection="column" gap="md">
+                <Box flexDirection="row" alignItems="center" gap="sm">
+                  <Text weight="bold" dimColor>
+                    {t('sectionOlder')}
                   </Text>
-                  {day.items.map(item => row(item))}
+                  <Text size="caption" dimColor tabular>
+                    {older.length}
+                  </Text>
+                  <Button
+                    key="toggle-older"
+                    dimColor
+                    label={showOlder ? t('hideOlder') : t('showOlder')}
+                    onPress={() => void update($, olderOpen, open => !open)}
+                  />
                 </Box>
-              ))}
-            </Box>
-          ))
+                {showOlder ? older.map(item => row(item)) : null}
+              </Box>
+            ) : null}
+          </Box>
         ) : (
           <Box flexDirection="column" gap="xs">
             <Text weight="semibold">{searching.trim() ? t('noMatch') : t(mode === 'agents' ? 'emptyAgentsTitle' : 'emptyWaitingTitle')}</Text>

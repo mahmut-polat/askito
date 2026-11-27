@@ -15,6 +15,10 @@ import { notifyCommand } from '../src/notify.js';
 import { startScript } from '../src/run.js';
 import { createApp } from '../src/server.js';
 import { Store } from '../src/store.js';
+import { findTranscript, wakeCommand, wakePrompt } from '../src/wake.js';
+
+// No test may start a real Claude chat, here or in a server it spawns.
+process.env.ASKITO_WAKE = 'off';
 
 const run = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -502,6 +506,7 @@ describe('server', () => {
   const tokens = { agent: 'agent-secret', ui: 'ui-secret' };
   const notifications = [];
   const opened = [];
+  const woken = [];
   let server;
   let port;
   let store;
@@ -512,7 +517,19 @@ describe('server', () => {
     await new Promise((r) => probe.listen(0, '127.0.0.1', r));
     port = probe.address().port;
     await new Promise((r) => probe.close(r));
-    ({ server } = createApp({ store, port, tokens, onShutdown: () => {}, sendNotification: (...args) => notifications.push(args), openFile: (...args) => opened.push(args) }));
+    ({ server } = createApp({
+      store,
+      port,
+      tokens,
+      onShutdown: () => {},
+      sendNotification: (...args) => notifications.push(args),
+      openFile: (...args) => opened.push(args),
+      wakeChat: (item) => {
+        woken.push(item.id);
+        return { resumed: Boolean(item.sessionId) };
+      },
+      wakeGraceMs: 60,
+    }));
     await new Promise((r) => server.listen(port, '127.0.0.1', r));
   });
 
@@ -740,6 +757,87 @@ describe('server', () => {
     assert.equal((await call('POST', `/api/items/${linked.id}/chat`, { headers: human(), body: {} })).status, 200);
     assert.deepEqual(opened.at(-1), [CHAT_LINK, false]);
     assert.equal(opened.length, before + 1);
+  });
+
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  const answer = (id) => call('POST', `/api/items/${id}/answer`, { headers: human(), body: { decision: 'comment', comment: 'Go on' } });
+
+  test('a closed chat is continued once after an answer, and the item says so', async () => {
+    const item = await create({ kind: 'question', title: 'Closed chat?', sessionId: 'closed-session' });
+    assert.equal((await answer(item.id)).status, 200);
+    await pause(200);
+    assert.equal(woken.filter((id) => id === item.id).length, 1);
+    const after = (await call('GET', `/api/items/${item.id}`, { headers: agent })).json().item;
+    assert.equal(after.messages.at(-1).kind, 'handover');
+    // The chat has not collected the answer yet, so it still counts as not received.
+    assert.equal(after.deliveredAt, null);
+  });
+
+  test('a chat whose panel checks in is left to its panel, and only the page may check in', async () => {
+    assert.equal((await call('POST', '/api/sessions/beat', { headers: agent, body: { sessionId: 'open-session' } })).status, 403);
+    assert.equal((await call('POST', '/api/sessions/beat', { headers: human(), body: { sessionId: 'bad id!' } })).status, 400);
+    assert.equal((await call('POST', '/api/sessions/beat', { headers: human(), body: { sessionId: 'open-session' } })).status, 200);
+    const item = await create({ kind: 'question', title: 'Open chat?', sessionId: 'open-session' });
+    await answer(item.id);
+    await pause(200);
+    assert.equal(woken.includes(item.id), false);
+  });
+
+  test('a chat that is waiting gets the answer itself and is not continued', async () => {
+    const item = await create({ kind: 'question', title: 'Waiting chat?', sessionId: 'waiting-session' });
+    const waited = call('GET', `/api/wait?ids=${item.id}&timeout=5`, { headers: agent });
+    await pause(30);
+    await answer(item.id);
+    assert.equal((await waited).json().ready[0].id, item.id);
+    await pause(200);
+    assert.equal(woken.includes(item.id), false);
+  });
+
+  test('an item collected before the grace ends is not continued', async () => {
+    const item = await create({ kind: 'question', title: 'Collected?', sessionId: 'quick-session' });
+    await answer(item.id);
+    await call('POST', `/api/items/${item.id}/ack`, { headers: agent, body: {} });
+    await pause(200);
+    assert.equal(woken.includes(item.id), false);
+  });
+});
+
+describe('waking a chat', () => {
+  const answered = {
+    id: 'abc',
+    number: 42,
+    title: 'Ship it?',
+    project: 'askito',
+    sessionId: '0325ae8d-01dd-48a2-a61d-6ab717343e71',
+    answer: { decision: 'option', choices: ['Yes'], comment: 'today', at: '2026-11-27T10:00:00.000Z' },
+  };
+
+  test('the prompt carries the answer and the command that collects it', () => {
+    const text = wakePrompt(answered);
+    assert.match(text, /askito #42 "Ship it\?" was answered: option: Yes: "today"\./);
+    assert.match(text, /askito wait 42/);
+    assert.doesNotMatch(text, /new chat/);
+    assert.match(wakePrompt(answered, { resumed: false }), /new chat in project "askito".*askito claim 42/s);
+  });
+
+  test('a chat with a transcript is resumed in its folder, any other gets a new chat there', () => {
+    const home = tempDir();
+    const cwd = tempDir();
+    const folder = path.join(home, '.claude', 'projects', '-some-project');
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, `${answered.sessionId}.jsonl`), '');
+    const transcript = findTranscript(answered.sessionId, home);
+    assert.equal(transcript, path.join(folder, `${answered.sessionId}.jsonl`));
+    assert.equal(findTranscript('../etc/passwd', home), null);
+
+    const resumed = wakeCommand({ ...answered, cwd }, { transcript, claude: '/bin/claude', home });
+    assert.deepEqual(resumed.args.slice(0, 3), ['--resume', answered.sessionId, '-p']);
+    assert.equal(resumed.cwd, cwd);
+    const fresh = wakeCommand({ ...answered, cwd }, { transcript: null, claude: '/bin/claude', home });
+    assert.equal(fresh.args[0], '-p');
+    assert.equal(fresh.resumed, false);
+    assert.equal(wakeCommand({ ...answered, cwd }, { transcript, claude: null, home }), null);
+    assert.equal(wakeCommand({ ...answered, cwd: '/no/such/folder' }, { transcript: null, claude: '/bin/claude', home }), null);
   });
 });
 
