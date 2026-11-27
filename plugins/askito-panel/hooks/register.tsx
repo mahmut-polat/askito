@@ -5,7 +5,9 @@ import type { Catalog, InboxItem, LinkEntry } from '../types'
 
 const PANE = 'askito-inbox'
 const POLL_MS = 4000
-const KIND_LABEL = { question: 'kindQuestion', approval: 'kindApproval', task: 'kindTask' } as const
+const KIND_LABEL = { question: 'kindQuestion', approval: 'kindApproval', task: 'kindTask', script: 'kindScript' } as const
+// The panel shows the end of a script's output; the inbox page shows all of it.
+const PANEL_OUTPUT = 4000
 
 // Lucide shapes, one silhouette and color per kind, matching the inbox page.
 // These tones stay legible on both the light and the dark theme.
@@ -22,6 +24,10 @@ const KIND_ICON = {
   task: {
     color: '#a678e2',
     shapes: '<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  },
+  script: {
+    color: '#2aa5b8',
+    shapes: '<path d="M12 19h8"/><path d="m4 17 6-6-6-6"/>',
   },
   file: {
     color: '#c9922e',
@@ -233,7 +239,25 @@ async function openFile($: EngineInterface, id: string, action: 'open' | 'reveal
   await refresh($)
 }
 
-async function act($: EngineInterface, id: string, action: 'answer' | 'dismiss' | 'later' | 'close' | 'reopen', body: object) {
+// A Markdown code block that holds any text, even text with backtick runs in it.
+function codeBlock(text: string, language = '') {
+  const longest = Math.max(2, ...Array.from(text.matchAll(/`+/g), match => match[0].length))
+  const fence = '`'.repeat(longest + 1)
+  return `${fence}${language}\n${text}\n${fence}`
+}
+
+function shellWord(word: string) {
+  return /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`
+}
+
+function runSummary(run: NonNullable<InboxItem['run']>, t: (key: string) => string) {
+  if (run.state === 'running') return t('running')
+  if (run.error) return t('runFailed').replace('{error}', run.error)
+  if (run.signal) return t('runStopped').replace('{signal}', run.signal)
+  return t('runExit').replace('{code}', String(run.exitCode))
+}
+
+async function act($: EngineInterface, id: string, action: 'answer' | 'dismiss' | 'later' | 'close' | 'reopen' | 'run' | 'stop' | 'chat', body: object) {
   const link = await connect($)
   const res = link ? await request($, link, `/api/items/${id}/${action}`, body).catch(() => null) : null
   // A 409 means the page answered first; the refresh below shows that.
@@ -251,7 +275,7 @@ function matches(item: InboxItem, text: string) {
   const wanted = text.trim().replace(/^#/, '').toLocaleLowerCase()
   if (!wanted) return true
   if (/^\d+$/.test(wanted)) return String(item.number) === wanted
-  return [item.title, item.body, item.project, item.chat].some(field => field?.toLocaleLowerCase().includes(wanted))
+  return [item.title, item.body, item.project, item.chat, item.chatTitle].some(field => field?.toLocaleLowerCase().includes(wanted))
 }
 
 // Opens one item by its number (42 or #42) in whichever list holds it.
@@ -369,7 +393,56 @@ export const register: Register = on => {
       )
     }
 
+    // A script: the command, a Run button, and what the last run printed.
+    const scriptDetail = (item: InboxItem) => {
+      const run = item.run
+      const running = run?.state === 'running'
+      const output = run?.output ? run.output.slice(-PANEL_OUTPUT) : ''
+      return (
+        <Box flexDirection="column" gap="sm" marginTop="sm" paddingLeft="xs">
+          {bodyView(item)}
+          <Text size="caption" dimColor>
+            {t('scriptIntro')}
+          </Text>
+          <Markdown text={codeBlock((item.script?.command ?? []).map(shellWord).join(' '), 'bash')} />
+          <Text size="caption" dimColor>
+            {`${t('scriptFolder')} ${item.script?.cwd ?? ''}`}
+          </Text>
+          {run ? (
+            <Text weight="semibold" color={running ? undefined : run.error || run.signal || run.exitCode !== 0 ? 'red' : 'green'}>
+              {runSummary(run, t)}
+            </Text>
+          ) : null}
+          {run ? <Markdown text={codeBlock(output || t('noOutput'))} /> : null}
+          <Box flexDirection="row" flexWrap="wrap" gap="sm" alignItems="center">
+            {running ? (
+              <Button key={`stop-${item.id}`} variant="secondary" label={t('stop')} onPress={() => void act($, item.id, 'stop', {})} />
+            ) : item.status === 'answered' ? (
+              [
+                <Button key={`complete-${item.id}`} variant="primary" label={t('complete')} onPress={() => void act($, item.id, 'close', {})} />,
+                <Button key={`again-${item.id}`} variant="secondary" label={t('runAgain')} onPress={() => void act($, item.id, 'run', {})} />,
+              ]
+            ) : (
+              [
+                <Button key={`run-${item.id}`} variant="primary" label={t('run')} onPress={() => void act($, item.id, 'run', {})} />,
+                <Button key={`later-${item.id}`} variant="secondary" label={t('later')} onPress={() => void act($, item.id, 'later', { later: true })} />,
+              ]
+            )}
+            <Box flexGrow={1} />
+            {copyButton(item)}
+            {running ? null : <Button key={`remove-${item.id}`} dimColor label={t('remove')} onPress={() => void act($, item.id, 'dismiss', {})} />}
+          </Box>
+          {failed ? (
+            <Text size="caption" color="red">
+              {t('errorGeneric')}
+            </Text>
+          ) : null}
+        </Box>
+      )
+    }
+
     const detail = (item: InboxItem) => {
+      if (item.kind === 'script') return scriptDetail(item)
       const comment = () => drafts[item.id]?.trim() || undefined
       const answer = (body: object) => () => void act($, item.id, 'answer', { ...body, comment: comment() })
       const remove = <Button key={`remove-${item.id}`} dimColor label={t('remove')} onPress={() => void act($, item.id, 'dismiss', {})} />
@@ -377,21 +450,29 @@ export const register: Register = on => {
         item.kind === 'question' && !item.multi && item.options.length ? (
           <Box flexDirection="column" gap="xs">
             {item.options.map(option => (
-              <Button key={`option-${item.id}-${option.id}`} variant={option.recommended ? 'primary' : 'secondary'} onPress={answer({ decision: 'option', choices: [option.id] })}>
-                {option.label}
-                {option.recommended ? <Text dimColor> {t('recommended')}</Text> : ''}
+              <Button key={`option-${item.id}-${option.id}`} label={option.label} variant={option.recommended ? 'primary' : 'secondary'} onPress={answer({ decision: 'option', choices: [option.id] })}>
+                {option.recommended ? <Text color="success" weight="semibold">★ {option.label}</Text> : option.label}
+                {option.recommended ? <Text color="success"> · {t('recommended')}</Text> : ''}
               </Button>
             ))}
           </Box>
         ) : null
       const actions = {
         approval: [
-          <Button key={`yes-${item.id}`} variant="primary" label={t('approve')} onPress={answer({ decision: 'approved' })} />,
-          <Button key={`no-${item.id}`} variant="secondary" label={t('reject')} onPress={answer({ decision: 'rejected' })} />,
+          <Button key={`yes-${item.id}`} variant="primary" label={item.yes || t('approve')} onPress={answer({ decision: 'approved' })}>
+            <Text color="success" weight="semibold">✓ {item.yes || t('approve')}</Text>
+          </Button>,
+          <Button key={`no-${item.id}`} variant="secondary" label={item.no || t('reject')} onPress={answer({ decision: 'rejected' })}>
+            <Text color="error" weight="semibold">✕ {item.no || t('reject')}</Text>
+          </Button>,
         ],
         task: [
-          <Button key={`did-${item.id}`} variant="primary" label={t('markDone')} onPress={answer({ decision: 'done' })} />,
-          <Button key={`cant-${item.id}`} variant="secondary" label={t('cantDo')} onPress={answer({ decision: 'blocked' })} />,
+          <Button key={`did-${item.id}`} variant="primary" label={t('markDone')} onPress={answer({ decision: 'done' })}>
+            <Text color="success" weight="semibold">✓ {t('markDone')}</Text>
+          </Button>,
+          <Button key={`cant-${item.id}`} variant="secondary" label={t('cantDo')} onPress={answer({ decision: 'blocked' })}>
+            <Text color="warning" weight="semibold">✕ {t('cantDo')}</Text>
+          </Button>,
         ],
         question: [],
       }[item.kind]
@@ -410,7 +491,7 @@ export const register: Register = on => {
           {choices}
           <Input
             key={`comment-${item.id}`}
-            placeholder={t('commentLabel')}
+            placeholder={item.kind === 'question' ? t('commentLabel') : `${t('noteLabel')}. ${t('notePlaceholder')}`}
             value={drafts[item.id] ?? ''}
             rows={2}
             submitLabel={t('commentOnly')}
@@ -439,7 +520,7 @@ export const register: Register = on => {
       )
     }
 
-    const agentDetail = (item: InboxItem) => (
+    const agentDetail = (item: InboxItem) => item.kind === 'script' ? scriptDetail(item) : (
       <Box flexDirection="column" gap="xs" marginTop="sm" paddingLeft="xs">
         {bodyView(item)}
         {eventLines(item, t).map(line => (
@@ -492,7 +573,7 @@ export const register: Register = on => {
                 ''
               )}
               <Text size="caption" dimColor>
-                {`${item.chat ? `  ${item.chat}` : ''}  ${stamp(item.createdAt)}`}
+                {`${item.chatTitle || item.chat ? `  ${item.chatTitle || item.chat}` : ''}  ${stamp(item.createdAt)}`}
               </Text>
             </Button>
             {state ? (
@@ -501,6 +582,15 @@ export const register: Register = on => {
                   {state.note ? `${state.label}: ${state.note}` : state.label}
                 </Text>
               </Button>
+            ) : null}
+            {isOpen && item.chatLink ? (
+              // The panel only follows https links, so askito opens the claude:// one.
+              <Button
+                key={`chat-${item.id}`}
+                plain
+                label={(words.openChat ?? 'Open the chat “{title}” in Claude').replace('{title}', item.chatTitle || item.chat || '')}
+                onPress={() => void act($, item.id, 'chat', {})}
+              />
             ) : null}
             {isOpen ? (mode === 'agents' ? agentDetail(item) : detail(item)) : null}
           </Box>

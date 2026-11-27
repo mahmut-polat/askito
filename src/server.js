@@ -4,11 +4,12 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { Sync } from './cloud.js';
+import { cloudLink, Sync } from './cloud.js';
 import { isRunnable, openCommand } from './links.js';
 import { notify } from './notify.js';
 import { setWritingLanguage, WRITING_LANGUAGES, writingLanguage } from './setup.js';
 import { agentToken, ensureHome, filePath, getPort, PACKAGE_ROOT, readConfig, uiToken, VERSION } from './paths.js';
+import { startScript } from './run.js';
 import { HttpError, isResolved, Store } from './store.js';
 
 const MAX_BODY = 256 * 1024;
@@ -84,11 +85,46 @@ function launchFile(file, reveal) {
   execFile(command, args, () => {});
 }
 
-export function createApp({ store, port, tokens, onShutdown, sendNotification = notify, openFile = launchFile }) {
+export function createApp({ store, port, tokens, onShutdown, sendNotification = notify, openFile = launchFile, runScript = startScript, cloud = null }) {
   const allowedHosts = new Set([`askito.localhost:${port}`, `127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`]);
   const allowedOrigins = new Set([...allowedHosts].map((h) => `http://${h}`));
   const streams = new Set();
   const waiters = new Map();
+  const running = new Map();
+
+  // Only the person at the inbox starts a script; a chat can post one but never run it.
+  function run(id) {
+    const item = store.startRun(id);
+    let pending = '';
+    let timer = null;
+    // Output is saved a few times a second, not on every line the script prints.
+    const save = () => {
+      timer = null;
+      if (pending) store.appendRun(id, pending);
+      pending = '';
+    };
+    const handle = runScript(item.script, {
+      onOutput: (chunk) => {
+        pending += chunk;
+        timer ??= setTimeout(save, 300);
+      },
+      onExit: (result) => {
+        clearTimeout(timer);
+        save();
+        running.delete(id);
+        store.finishRun(id, result);
+      },
+    });
+    if (store.get(id).run?.state === 'running') running.set(id, handle);
+    return store.get(id);
+  }
+
+  function stop(id) {
+    const item = store.get(id);
+    if (item.run?.state !== 'running') throw new HttpError(409, 'not_running', 'this script is not running');
+    running.get(id)?.stop();
+    return item;
+  }
 
   const waiting = (id) => {
     const entry = waiters.get(id);
@@ -207,7 +243,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       require_(who, 'agent');
       const session = searchParams.get('session') ?? '';
       const project = searchParams.get('project') ?? undefined;
-      store.touchSession({ id: session, project, chat: searchParams.get('chat') ?? undefined, agent: searchParams.get('agent') ?? undefined });
+      store.touchSession({ id: session, project, chat: searchParams.get('chat') ?? undefined, agent: searchParams.get('agent') ?? undefined, chatTitle: searchParams.get('chatTitle') ?? undefined, chatLink: searchParams.get('chatLink') ?? undefined });
       const orphans = project ? store.orphans({ project, session, isWaited: waiting }).map(view) : [];
       return sendJson(res, 200, { ...store.followups(session), orphans });
     }
@@ -235,6 +271,17 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
       if (!WRITING_LANGUAGES[body.writingLanguage]) throw new HttpError(400, 'invalid_request', 'unknown language');
       setWritingLanguage(body.writingLanguage);
       return sendJson(res, 200, { writingLanguage: writingLanguage() });
+    }
+
+    // Connecting this computer to an askito.net account. Only the browser may.
+    if (route === 'GET /api/cloud' || route === 'POST /api/cloud/connect' || route === 'POST /api/cloud/cancel' || route === 'POST /api/cloud/disconnect') {
+      require_(who, 'human');
+      if (!cloud) throw new HttpError(404, 'not_found', 'online sync is not available here');
+      if (req.method === 'POST') await readJson(req);
+      if (route === 'GET /api/cloud') return sendJson(res, 200, cloud.view());
+      if (route === 'POST /api/cloud/connect') return sendJson(res, 200, await cloud.connect());
+      if (route === 'POST /api/cloud/cancel') return sendJson(res, 200, cloud.cancel());
+      return sendJson(res, 200, await cloud.disconnect());
     }
 
     if (route === 'GET /api/links') {
@@ -310,10 +357,23 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
         },
       ],
       close: ['human', () => store.close(id, 'human', body.note)],
+      run: ['human', () => run(id)],
+      stop: ['human', () => stop(id)],
       ack: ['agent', () => store.ack(id)],
       reply: ['agent', () => store.reply(id, body)],
       progress: ['agent', () => store.progress(id, body)],
       done: ['agent', () => store.close(id, 'agent', body.note)],
+      // The Claude panel cannot follow a claude:// link, so askito opens the
+      // chat for it. The store only keeps links of the app's own form.
+      chat: [
+        'human',
+        () => {
+          const item = store.get(id);
+          if (!item.chatLink) throw new HttpError(400, 'no_chat_link', 'this item has no chat link');
+          openFile(item.chatLink, false);
+          return item;
+        },
+      ],
     };
     const handler = handlers[action];
     if (!handler) throw new HttpError(404, 'not_found', 'unknown route');
@@ -373,7 +433,7 @@ export function createApp({ store, port, tokens, onShutdown, sendNotification = 
     });
   });
 
-  return { server, closeStreams: () => streams.forEach((s) => s.end()) };
+  return { server, closeStreams: () => streams.forEach((s) => s.end()), stopScripts: () => running.forEach((handle) => handle.stop()) };
 }
 
 export function serve() {
@@ -387,6 +447,7 @@ export function serve() {
   const sync = new Sync({ store });
 
   const stop = () => {
+    stopScripts();
     sync.stop();
     store.flush();
     try {
@@ -397,12 +458,13 @@ export function serve() {
     process.exit(0);
   };
 
-  const { server } = createApp({
+  const { server, stopScripts } = createApp({
     store,
     port,
     tokens: { agent: agentToken(), ui: uiToken() },
     onShutdown: stop,
     sendNotification: quiet ? () => {} : notify,
+    cloud: cloudLink({ sync }),
   });
 
   server.on('error', (err) => {

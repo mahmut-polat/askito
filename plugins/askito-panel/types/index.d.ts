@@ -6,14 +6,23 @@ export type InboxItem = {
   id: string
   // The number people see and type, such as 42 for #42.
   number?: number
-  kind: 'question' | 'approval' | 'task'
+  kind: 'question' | 'approval' | 'task' | 'script'
   title: string
+  // A script item: what Run starts, and how its last run went.
+  script?: { command: string[]; cwd: string } | null
+  run?: { state: 'running' | 'finished'; exitCode: number | null; signal: string | null; error: string | null; output: string } | null
   body: string | null
   options: InboxOption[]
   multi: boolean
+  // An approval's own button words, such as "Yes, delete it" and "No, keep it".
+  yes?: string | null
+  no?: string | null
   urgent: boolean
   project: string
   chat: string | null
+  chatTitle?: string | null
+  chatLink?: string | null
+  account?: string | null
   agentWaiting: boolean
   createdAt: string
   laterAt?: string | null

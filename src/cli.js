@@ -33,13 +33,19 @@ Online access (optional)
 
 For agents
   askito ask "Title" [options]    Post a question
-  askito approve "Title" [...]    Post an approve-or-reject request
+  askito approve "Title" --yes "Yes, delete" --no "No, keep it" [...]
+                                   Post an approve-or-reject request. --yes and --no
+                                   name the two buttons in words that answer the title
   askito task "Title" [...]       Post something only the human can do
     --body TEXT  --body-file FILE (- reads stdin)
     --option "Label" or "Label::Description" (repeat)
     --recommend N  --multi  --urgent
     --project NAME  --chat NAME  --key STABLE_ID
     --wait  --timeout SECONDS  --json
+  askito script "Title" [--cwd DIR] [--chat NAME] [--wait] -- program args...
+                                   Show the user a script they run with one click in the inbox.
+                                   Put the same command in your chat too. The output and exit
+                                   code come back through wait. No shell: no pipes or &&.
   askito wait ID... [--all] [--timeout SECONDS] [--json]
   askito pickup [--project NAME] [--chat NAME] [--json]
   askito ack ID
@@ -84,6 +90,9 @@ const OPTIONS = {
   server: { type: 'string' },
   account: { type: 'string' },
   removed: { type: 'boolean' },
+  cwd: { type: 'string' },
+  yes: { type: 'string' },
+  no: { type: 'string' },
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean', short: 'v' },
 };
@@ -117,21 +126,27 @@ function linkTarget(target) {
   return { path: file };
 }
 
-async function post(kind, title, values) {
-  if (!title) throw new Error(`a title is required. Example: askito ${kind === 'question' ? 'ask' : kind === 'approval' ? 'approve' : 'task'} "What should happen?"`);
+const VERB = { question: 'ask', approval: 'approve', task: 'task', script: 'script' };
+
+async function post(kind, title, values, command) {
+  if (!title) throw new Error(`a title is required. Example: askito ${VERB[kind]} "What should happen?"`);
   const context = detectContext();
   const { item } = await api('POST', '/api/items', {
     kind,
     title,
     body: readBody(values),
-    options: parseOptions(values),
+    ...(kind === 'script' ? { command } : { options: parseOptions(values) }),
+    ...(kind === 'approval' ? { yes: values.yes, no: values.no } : {}),
     multi: values.multi,
     urgent: values.urgent,
     key: values.key,
     project: values.project ?? context.project,
     chat: values.chat ?? context.chat,
+    chatTitle: context.chatTitle,
+    chatLink: context.chatLink,
+    account: context.account,
     agent: context.agent,
-    cwd: context.cwd,
+    cwd: kind === 'script' && values.cwd ? path.resolve(values.cwd) : context.cwd,
     sessionId: context.session,
   });
   // stdout carries only the number, so ID=$(askito ask ...) keeps working; the
@@ -251,6 +266,13 @@ export async function main(argv) {
       return post('approval', rest[0], values);
     case 'task':
       return post('task', rest[0], values);
+    case 'script': {
+      // Everything after -- is the command, passed on word for word.
+      const split = argv.indexOf('--');
+      const program = split === -1 ? [] : argv.slice(split + 1);
+      if (!program.length) throw new Error('usage: askito script "Title" [--cwd DIR] -- program args...');
+      return post('script', rest.length > program.length ? rest[0] : undefined, values, program);
+    }
     case 'wait':
       if (!rest.length) throw new Error('usage: askito wait ID...');
       return outputResult(await waitForItems(rest, { timeoutSeconds: Number(values.timeout ?? 0), all: values.all }), values);

@@ -51,6 +51,13 @@ Chats post three kinds of item:
 | Question | Pick an option, or type your own answer |
 | Approval | Approve, Reject, or send a comment |
 | Your task | I did it, I can't do this, or send a comment |
+| Script | Run, Stop, Run again, Later |
+
+### Scripts
+
+When a chat needs you to run a command on this computer, the command stays in that chat as a `bash` block, so the chat's own Run button works. The inbox gets a script item that says which chat is waiting, shows the same command and the folder it runs in, and has a Run button of its own. Click it and askito starts the command, shows the output as it comes in and ends with the exit code. The panel in Claude Code has the same button. The chat reads the result and closes the item.
+
+Only you can start a script: the Run button needs the browser's secret, which agents do not use. The command runs without a shell, so pipes and `&&` do not work and a chat names a script file instead. A run stops after 60 minutes, the inbox keeps the last 64,000 characters of output, and scripts are never sent to askito.net.
 
 The Links tab keeps every page your chats published for you, such as artifacts, reports and previews. Click a title to open it in a new tab. In Claude Code a hook adds each published artifact by itself, and other tools add theirs with `askito link`. The same address published again updates its row, so the list does not fill with copies. Files your chats make on this computer, such as videos, PDFs and reports, go to the Files tab the same way (`askito link "Title" ~/path/to/file`). There, Open starts the file in its usual app and Show in folder opens Finder or Explorer at it. Scripts and apps are only ever shown in their folder, and only the inbox page can ask for a file to be opened.
 
@@ -161,8 +168,9 @@ The test suite runs on macOS, Linux and Windows with Node 20, 22 and 24. Desktop
 
 ```text
 askito ask "Title"       --body TEXT --option "Label::Description" --recommend 1 --wait
-askito approve "Title"   --body TEXT --urgent --wait
+askito approve "Title"   --body TEXT --yes "Yes, delete" --no "No, keep it" --wait
 askito task "Title"      --body TEXT --chat "short name" --wait
+askito script "Title"    --chat "short name" --cwd DIR --wait -- program args
 askito wait 42          --timeout 100
 askito pickup
 askito reply 42 "Follow-up, puts the item back in Waiting"

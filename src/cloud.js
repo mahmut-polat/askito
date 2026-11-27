@@ -100,13 +100,14 @@ export async function cloudRequest(server, method, route, { token, body } = {}) 
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function login({ server = DEFAULT_SERVER, name = os.hostname(), print, openBrowser, wait = sleep }) {
+export async function login({ server = DEFAULT_SERVER, name = os.hostname(), print = () => {}, openBrowser = () => {}, onCode = () => {}, wait = sleep }) {
   const origin = serverOrigin(server);
   const deviceName = (name || 'computer').slice(0, 100);
   const { body: start } = await cloudRequest(origin, 'POST', '/api/pair/start', { body: { name: deviceName } }).catch((err) => {
     if (err.status === 429) throw new Error('too many attempts. Wait a few minutes and run askito login again');
     throw err;
   });
+  onCode({ userCode: start.userCode, verifyUrl: start.verifyUrl, expiresIn: start.expiresIn });
   print(`Code: ${start.userCode}`);
   print(`Open ${start.verifyUrl} and check that it shows the same code, then click Allow.`);
   openBrowser(start.verifyUrl);
@@ -129,7 +130,9 @@ export async function login({ server = DEFAULT_SERVER, name = os.hostname(), pri
       forgetCloud();
       writePrivate(CLOUD_FILE, { server: origin, token: result.body.token, deviceId: result.body.deviceId ?? null, name: deviceName, pairedAt: new Date().toISOString() });
       const me = await cloudRequest(origin, 'GET', '/api/sync/me', { token: result.body.token }).catch(() => null);
-      return { server: origin, email: me?.body.email ?? null };
+      const email = me?.body.email ?? null;
+      if (email) writePrivate(CLOUD_FILE, { ...readCloud(), email });
+      return { server: origin, email };
     }
   }
   throw new Error('the code expired. Run askito login again');
@@ -152,7 +155,85 @@ export async function logout() {
 export function cloudStatus() {
   const cloud = readCloud();
   const state = readSyncState();
-  return { on: Boolean(cloud), server: cloud?.server ?? null, lastSyncAt: state.lastSyncAt ?? null, lastError: state.lastError ?? null };
+  return {
+    on: Boolean(cloud),
+    server: cloud?.server ?? null,
+    email: cloud?.email ?? null,
+    lastSyncAt: state.lastSyncAt ?? null,
+    lastError: state.lastError ?? null,
+  };
+}
+
+// Connecting from the inbox page or the panel. The pairing runs inside the
+// server, so the page only shows the code and the link and then asks again.
+// The device token stays in cloud.json and is never sent to the page.
+export function cloudLink({ sync, server = DEFAULT_SERVER, signIn = login, signOut = logout, status = cloudStatus, wait = sleep }) {
+  let pairing = { state: 'idle' };
+  let current = null;
+
+  const view = () => ({ ...status(), pairing });
+
+  return {
+    view,
+
+    connect() {
+      if (pairing.state === 'pending') return Promise.resolve(view());
+      if (status().on) return Promise.resolve(view());
+      const attempt = { cancelled: false };
+      current = attempt;
+      pairing = { state: 'starting' };
+      return new Promise((resolve) => {
+        signIn({
+          server,
+          wait: async (ms) => {
+            await wait(ms);
+            if (attempt.cancelled) throw new Error('cancelled');
+          },
+          onCode: ({ userCode, verifyUrl, expiresIn }) => {
+            let link = null;
+            try {
+              // The page opens this link, so it must point at the same server.
+              if (new URL(verifyUrl).origin === serverOrigin(server)) link = verifyUrl;
+            } catch {
+              link = null;
+            }
+            pairing = { state: 'pending', userCode, verifyUrl: link, expiresAt: new Date(Date.now() + (Number(expiresIn) > 0 ? Number(expiresIn) : 600) * 1000).toISOString() };
+            attempt.shown = true;
+            resolve(view());
+          },
+        })
+          .then(() => {
+            if (current !== attempt) return;
+            pairing = { state: 'idle' };
+            sync?.stop();
+            sync?.start();
+          })
+          .catch((err) => {
+            if (current === attempt && !attempt.cancelled) pairing = { state: 'failed', error: err.message };
+          })
+          .finally(() => {
+            if (!attempt.shown) resolve(view());
+          });
+      });
+    },
+
+    async disconnect() {
+      sync?.stop();
+      if (current) current.cancelled = true;
+      current = null;
+      pairing = { state: 'idle' };
+      const result = await signOut();
+      return { ...view(), revoked: result.revoked ?? null, error: result.error ?? null };
+    },
+
+    // The code on the website runs out by itself; this stops asking for it.
+    cancel() {
+      if (current) current.cancelled = true;
+      current = null;
+      pairing = { state: 'idle' };
+      return view();
+    },
+  };
 }
 
 // Only the fields in the contract. cwd, sessionId and key stay on this machine.
@@ -313,7 +394,7 @@ export class Sync {
   // An answer given here first wins: only an item that is still open takes the online change.
   apply(change) {
     const item = this.store.items.get(change.itemId);
-    if (!item || item.status !== 'open') return false;
+    if (!item || item.status !== 'open' || item.kind === 'script') return false;
     try {
       if (change.action === 'answer') {
         this.store.answer(item.id, { decision: change.answer?.decision, choices: change.answer?.choices, comment: change.answer?.comment });
@@ -336,7 +417,8 @@ export class Sync {
     const all = this.pushAll;
     const since = all ? null : this.state.pushedUntil;
     this.pushAll = false;
-    const items = [...this.store.items.values()].filter((i) => (!since || i.updatedAt >= since) && this.sent.get(i.id) !== i.updatedAt);
+    // Scripts and their output stay on this machine, and only run from the inbox here.
+    const items = [...this.store.items.values()].filter((i) => i.kind !== 'script' && (!since || i.updatedAt >= since) && this.sent.get(i.id) !== i.updatedAt);
     try {
       await this.push(items);
     } catch (err) {
@@ -363,6 +445,7 @@ export class Sync {
       bytes = 0;
     };
     for (const item of items) {
+      if (item.kind === 'script') continue;
       const data = toCloudItem(item);
       const size = JSON.stringify(data).length;
       if (batch.length === PUSH_BATCH || (batch.length && bytes + size > PUSH_BYTES)) await send();

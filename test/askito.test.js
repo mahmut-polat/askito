@@ -8,9 +8,11 @@ import { after, before, describe, test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { formatItem } from '../src/client.js';
+import { desktopChat } from '../src/context.js';
 import { Sync } from '../src/cloud.js';
 import { artifactFromHook, isRunnable, openCommand, parseLinkTable } from '../src/links.js';
 import { notifyCommand } from '../src/notify.js';
+import { startScript } from '../src/run.js';
 import { createApp } from '../src/server.js';
 import { Store } from '../src/store.js';
 
@@ -18,6 +20,7 @@ const run = promisify(execFile);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = path.join(ROOT, 'bin', 'askito.js');
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'askito-test-'));
+const CHAT_LINK = 'claude://claude.ai/epitaxy/local_0325ae8d-01dd-48a2-a61d-6ab717343e71';
 
 function newStore() {
   return new Store(path.join(tempDir(), 'items.json'));
@@ -63,6 +66,22 @@ describe('store', () => {
     const item = store.create({ kind: 'approval', title: 'Go?' });
     store.answer(item.id, { decision: 'approved' });
     assert.throws(() => store.answer(item.id, { decision: 'rejected' }), /already been answered/);
+  });
+
+  test('an approval keeps its own button words', () => {
+    const store = newStore();
+    const item = store.create({ kind: 'approval', title: 'Delete the 40 lines?', yes: 'Yes, delete them', no: 'No, keep them' });
+    assert.equal(item.yes, 'Yes, delete them');
+    assert.equal(item.no, 'No, keep them');
+    const plain = store.create({ kind: 'approval', title: 'Go?' });
+    assert.equal(plain.yes, null);
+    assert.equal(plain.no, null);
+  });
+
+  test('button words are refused on other kinds and when too long', () => {
+    const store = newStore();
+    assert.throws(() => store.create({ title: 'Which?', yes: 'Yes' }), /only apply to kind "approval"/);
+    assert.throws(() => store.create({ kind: 'approval', title: 'Go?', yes: 'x'.repeat(61) }), /yes/);
   });
 
   test('items are numbered from 1 and found by number or #number', () => {
@@ -289,6 +308,50 @@ describe('store', () => {
       const second = new Store(file);
       assert.equal(second.directory().sessions[0].chat, 'c');
       assert.equal(second.create({ title: 'T', project: 'a' }).project, 'b');
+    });
+
+    test('an item keeps the chat title and link, and refuses any other link', () => {
+      const store = newStore();
+      const item = store.create({ title: 'T', sessionId: 's', chatTitle: 'Sidebar name', chatLink: CHAT_LINK, account: 'me@example.com' });
+      assert.equal(item.chatTitle, 'Sidebar name');
+      assert.equal(item.chatLink, CHAT_LINK);
+      assert.equal(item.account, 'me@example.com');
+      for (const chatLink of ['javascript:alert(1)', 'https://claude.ai/epitaxy/local_x', `${CHAT_LINK}?x=1`]) {
+        assert.throws(() => store.create({ title: 'T', chatLink }), /chatLink must be/);
+      }
+    });
+
+    test('a renamed chat renames its items, and older items get the name and link', () => {
+      const store = newStore();
+      const old = store.create({ title: 'Before', sessionId: 's' });
+      const named = store.create({ title: 'Named', sessionId: 's', chatTitle: 'First name', chatLink: CHAT_LINK });
+      const other = store.create({ title: 'Other', sessionId: 'x', chatTitle: 'Keep' });
+      const seen = [];
+      store.on('change', ({ type, item }) => seen.push([type, item.title]));
+      store.touchSession({ id: 's', project: 'p', chatTitle: 'Real name', chatLink: CHAT_LINK });
+      assert.equal(store.get(named.id).chatTitle, 'Real name');
+      assert.equal(store.get(old.id).chatTitle, 'Real name');
+      assert.equal(store.get(old.id).chatLink, CHAT_LINK);
+      assert.equal(store.get(other.id).chatTitle, 'Keep');
+      assert.deepEqual(seen.filter(([type]) => type === 'renamed').map(([, title]) => title).sort(), ['Before', 'Named']);
+      seen.length = 0;
+      store.touchSession({ id: 's', chatTitle: 'Real name', chatLink: CHAT_LINK });
+      assert.equal(seen.filter(([type]) => type === 'renamed').length, 0);
+    });
+
+    test('the desktop chat name comes from the app file, the link from the session id', () => {
+      const home = tempDir();
+      const account = '11111111-2222-3333-4444-555555555555';
+      const org = '66666666-7777-8888-9999-000000000000';
+      const id = CHAT_LINK.split('/').at(-1);
+      const dir = path.join(home, 'Library', 'Application Support', 'Claude', 'claude-code-sessions', account, org);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, `${id}.json`), JSON.stringify({ title: '  Multi-chat app  ', cliSessionId: 's' }));
+      const env = { CLAUDE_CODE_HOST_SESSION_ID: id, CLAUDE_CODE_ACCOUNT_UUID: account, CLAUDE_CODE_ORGANIZATION_UUID: org, CLAUDE_CODE_USER_EMAIL: 'me@example.com' };
+      assert.deepEqual(desktopChat(env, home), { chatLink: CHAT_LINK, account: 'me@example.com', chatTitle: 'Multi-chat app' });
+      assert.deepEqual(desktopChat({ ...env, CLAUDE_CODE_ACCOUNT_UUID: '../../x' }, home), { chatLink: CHAT_LINK, account: 'me@example.com' });
+      assert.deepEqual(desktopChat({ CLAUDE_CODE_HOST_SESSION_ID: 'local_../../etc' }, home), {});
+      assert.deepEqual(desktopChat({}, home), {});
     });
   });
 
@@ -667,6 +730,16 @@ describe('server', () => {
     assert.equal(listed.find((l) => l.id === movie.id).exists, false);
     assert.equal((await call('POST', `/api/links/${movie.id}/open`, { headers: human(), body: {} })).status, 404);
     assert.equal(opened.length, 3);
+  });
+  test('the chat link opens only from the page, and only when the item has one', async () => {
+    const before = opened.length;
+    const linked = await create({ kind: 'question', title: 'Which?', chatTitle: 'Multi-chat app', chatLink: CHAT_LINK });
+    const bare = await create({ kind: 'question', title: 'Plain?' });
+    assert.equal((await call('POST', `/api/items/${linked.id}/chat`, { headers: agent, body: {} })).status, 403);
+    assert.equal((await call('POST', `/api/items/${bare.id}/chat`, { headers: human(), body: {} })).status, 400);
+    assert.equal((await call('POST', `/api/items/${linked.id}/chat`, { headers: human(), body: {} })).status, 200);
+    assert.deepEqual(opened.at(-1), [CHAT_LINK, false]);
+    assert.equal(opened.length, before + 1);
   });
 });
 
@@ -1129,6 +1202,192 @@ function fakeCloud() {
     calls: (method, route) => state.requests.filter((r) => r.method === method && r.path === route),
   };
 }
+
+describe('scripts', () => {
+  const folder = tempDir();
+  const script = (store, extra = {}) => store.create({ kind: 'script', title: 'Run the check', command: ['bash', 'scripts/check.sh'], cwd: folder, ...extra });
+
+  test('a script needs a command and the full path of its folder', () => {
+    const store = newStore();
+    assert.throws(() => store.create({ kind: 'script', title: 'No command', cwd: folder }), /needs command/);
+    assert.throws(() => store.create({ kind: 'script', title: 'Empty part', command: ['bash', ''], cwd: folder }), /non-empty string/);
+    assert.throws(() => store.create({ kind: 'script', title: 'Too many', command: Array(51).fill('x'), cwd: folder }), /at most 50/);
+    assert.throws(() => store.create({ kind: 'script', title: 'Relative', command: ['ls'], cwd: 'some/folder' }), /full path/);
+    assert.deepEqual(script(store).script, { command: ['bash', 'scripts/check.sh'], cwd: path.normalize(folder) });
+  });
+
+  test('a finished run is the answer, with the exit code, and the script can run again', () => {
+    const store = newStore();
+    const item = script(store);
+    store.startRun(item.id);
+    assert.throws(() => store.startRun(item.id), /already running/);
+    store.appendRun(item.id, 'line 1\n');
+    store.appendRun(item.id, 'line 2\n');
+    const done = store.finishRun(item.id, { exitCode: 2 });
+    assert.equal(done.status, 'answered');
+    assert.equal(done.answer.decision, 'ran');
+    assert.equal(done.answer.exitCode, 2);
+    assert.equal(done.run.output, 'line 1\nline 2\n');
+    assert.equal(done.messages.at(-1).text, 'exit code 2');
+    const again = store.startRun(item.id);
+    assert.equal(again.run.state, 'running');
+    assert.equal(again.run.output, '');
+  });
+
+  test('only a script runs, and a closed one does not', () => {
+    const store = newStore();
+    assert.throws(() => store.startRun(store.create({ kind: 'task', title: 'Sign' }).id), /only script items/);
+    const item = script(store);
+    store.dismiss(item.id);
+    assert.throws(() => store.startRun(item.id), /closed/);
+  });
+
+  test('a script is told the output was cut when it runs past the limit', () => {
+    const store = newStore();
+    const item = script(store);
+    store.startRun(item.id);
+    store.appendRun(item.id, 'a'.repeat(70000));
+    store.appendRun(item.id, 'END');
+    const output = store.get(item.id).run.output;
+    assert.equal(output.length, 64000);
+    assert.ok(output.endsWith('END'));
+  });
+
+  test('a run left over from a stopped inbox is marked finished when the store loads', () => {
+    const store = newStore();
+    const item = script(store);
+    store.startRun(item.id);
+    store.flush();
+    const reloaded = new Store(store.file);
+    const after = reloaded.get(item.id);
+    assert.equal(after.run.state, 'finished');
+    assert.match(after.run.error, /askito stopped/);
+    assert.equal(after.answer.decision, 'ran');
+    clearTimeout(reloaded.timer);
+  });
+
+  test('the real runner passes arguments as they are, with no shell, and reports the exit code', async () => {
+    const result = await new Promise((resolve) => {
+      let output = '';
+      startScript(
+        { command: [process.execPath, '-e', 'console.log(process.argv[1]); process.exit(3)', 'a; echo b && $HOME'], cwd: folder },
+        { onOutput: (chunk) => { output += chunk; }, onExit: (end) => resolve({ ...end, output }) },
+      );
+    });
+    assert.equal(result.exitCode, 3);
+    assert.equal(result.output.trim(), 'a; echo b && $HOME');
+  });
+
+  test('the real runner reports a missing program and a missing folder', async () => {
+    const end = (cmd) => new Promise((resolve) => startScript(cmd, { onOutput: () => {}, onExit: resolve }));
+    assert.match((await end({ command: ['askito-no-such-program'], cwd: folder })).error, /was not found/);
+    assert.match((await end({ command: [process.execPath], cwd: path.join(folder, 'gone') })).error, /does not exist/);
+  });
+
+  test('online sync never sends a script and never takes an online answer for one', async () => {
+    const store = newStore();
+    const question = store.create({ title: 'Synced?' });
+    const item = script(store);
+    const sync = new Sync({ store, log: () => {} });
+    const sent = [];
+    sync.cloud = { server: 'https://askito.invalid', token: 'x' };
+    sync.call = async (method, route, body) => {
+      sent.push(...(body?.items ?? []).map((i) => i.id));
+      return { status: 200, body: {} };
+    };
+    await sync.push([...store.items.values()]);
+    assert.deepEqual(sent, [question.id]);
+    assert.equal(sync.apply({ itemId: item.id, action: 'dismiss' }), false);
+    assert.equal(store.get(item.id).status, 'open');
+  });
+
+  describe('through the server', () => {
+    const tokens = { agent: 'agent-secret', ui: 'ui-secret' };
+    const runs = [];
+    let server;
+    let port;
+    let store;
+
+    before(async () => {
+      store = newStore();
+      const probe = http.createServer();
+      await new Promise((r) => probe.listen(0, '127.0.0.1', r));
+      port = probe.address().port;
+      await new Promise((r) => probe.close(r));
+      // A fake runner: the test decides when the script prints and ends.
+      const runScript = (spec, hooks) => {
+        const entry = { spec, hooks, stopped: false };
+        runs.push(entry);
+        return { stop: () => { entry.stopped = true; hooks.onExit({ exitCode: null, signal: 'SIGTERM' }); } };
+      };
+      ({ server } = createApp({ store, port, tokens, onShutdown: () => {}, sendNotification: () => {}, runScript }));
+      await new Promise((r) => server.listen(port, '127.0.0.1', r));
+    });
+
+    after(() => {
+      server.closeAllConnections();
+      server.close();
+      clearTimeout(store.timer);
+    });
+
+    function call(method, route, { headers = {}, body } = {}) {
+      return new Promise((resolve, reject) => {
+        const payload = body === undefined ? undefined : JSON.stringify(body);
+        const req = http.request(
+          { host: '127.0.0.1', port, method, path: route, headers: { ...(payload ? { 'Content-Type': 'application/json' } : {}), ...headers } },
+          (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => resolve({ status: res.statusCode, json: () => JSON.parse(data) }));
+          },
+        );
+        req.on('error', reject);
+        req.end(payload);
+      });
+    }
+
+    const agent = { Authorization: `Bearer ${tokens.agent}` };
+    const human = () => ({ Cookie: `askito_ui=${tokens.ui}`, Origin: `http://127.0.0.1:${port}` });
+    const post = async () => (await call('POST', '/api/items', { headers: agent, body: { kind: 'script', title: 'Renew', command: ['bash', 'renew.sh'], cwd: folder } })).json().item;
+
+    test('a chat can post a script but cannot run it', async () => {
+      const item = await post();
+      assert.equal(item.kind, 'script');
+      const res = await call('POST', `/api/items/${item.id}/run`, { headers: agent, body: {} });
+      assert.equal(res.status, 403);
+      assert.equal(store.get(item.id).run ?? null, null);
+    });
+
+    test('Run starts the command, the output shows up, and the waiting chat gets ran with the exit code', async () => {
+      const item = await post();
+      const waiting = call('GET', `/api/wait?ids=${item.id}&timeout=10`, { headers: agent });
+      const res = await call('POST', `/api/items/${item.id}/run`, { headers: human(), body: {} });
+      assert.equal(res.status, 200);
+      assert.equal(res.json().item.run.state, 'running');
+      const entry = runs.at(-1);
+      assert.deepEqual(entry.spec.command, ['bash', 'renew.sh']);
+      entry.hooks.onOutput('renewed\n');
+      entry.hooks.onExit({ exitCode: 0, signal: null });
+      const answer = (await waiting).json();
+      assert.equal(JSON.stringify(answer).includes('"ran"'), true);
+      const after = store.get(item.id);
+      assert.equal(after.run.output, 'renewed\n');
+      assert.equal(after.answer.exitCode, 0);
+      assert.equal((await call('POST', `/api/items/${item.id}/run`, { headers: human(), body: {} })).status, 200);
+      runs.at(-1).hooks.onExit({ exitCode: 0, signal: null });
+    });
+
+    test('Stop ends a running script, and only the browser can stop it', async () => {
+      const item = await post();
+      await call('POST', `/api/items/${item.id}/run`, { headers: human(), body: {} });
+      assert.equal((await call('POST', `/api/items/${item.id}/stop`, { headers: agent, body: {} })).status, 403);
+      assert.equal((await call('POST', `/api/items/${item.id}/stop`, { headers: human(), body: {} })).status, 200);
+      assert.equal(runs.at(-1).stopped, true);
+      assert.equal(store.get(item.id).run.signal, 'SIGTERM');
+      assert.equal((await call('POST', `/api/items/${item.id}/stop`, { headers: human(), body: {} })).status, 409);
+    });
+  });
+});
 
 describe('online sync', () => {
   const cloud = fakeCloud();

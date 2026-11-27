@@ -13,7 +13,7 @@ const TABS = [
   { id: 'files', links: 'file', label: 'tabFiles', head: 'headFiles', empty: 'emptyFiles' },
 ];
 const STALL_MINUTES = 30;
-const KIND_LABEL = { question: 'kindQuestion', approval: 'kindApproval', task: 'kindTask' };
+const KIND_LABEL = { question: 'kindQuestion', approval: 'kindApproval', task: 'kindTask', script: 'kindScript' };
 // Lucide icons, one distinct silhouette per kind.
 const KIND_ICON = {
   question: [
@@ -28,6 +28,10 @@ const KIND_ICON = {
   task: [
     ['circle', { cx: 12, cy: 8, r: 5 }],
     ['path', { d: 'M20 21a8 8 0 0 0-16 0' }],
+  ],
+  script: [
+    ['path', { d: 'M12 19h8' }],
+    ['path', { d: 'm4 17 6-6-6-6' }],
   ],
   file: [
     ['path', { d: 'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z' }],
@@ -288,7 +292,7 @@ function visibleItems() {
     if (state.project && item.project !== state.project) return false;
     if (!query) return true;
     if (String(item.number) === query.replace(/^#/, '')) return true;
-    return [item.title, item.body, item.chat, item.project].some((field) => field?.toLocaleLowerCase(language).includes(query));
+    return [item.title, item.body, item.chat, item.chatTitle, item.project].some((field) => field?.toLocaleLowerCase(language).includes(query));
   });
   const newest = (a, b) => b.createdAt.localeCompare(a.createdAt);
   const compare = {
@@ -355,6 +359,7 @@ async function refresh() {
     if (next === snapshot && !state.sessionLost) return;
     snapshot = next;
     notifyNew(items);
+    announceRunEnds(items);
     firstLoad = false;
     state.items = items;
     state.links = links;
@@ -390,7 +395,7 @@ async function act(id, action, body = {}) {
   render();
 }
 
-function button(item, { label, kind, action, body, disabled, needsComment }) {
+function button(item, { label, mark, kind, action, body, disabled, needsComment }) {
   const busy = state.busy === `${item.id}:${action}:${body?.decision ?? ''}`;
   return h(
     'button',
@@ -405,7 +410,7 @@ function button(item, { label, kind, action, body, disabled, needsComment }) {
         act(item.id, action, payload);
       },
     },
-    busy ? t('sending') : label,
+    busy ? t('sending') : [mark ? h('span', { class: 'btn-mark', 'aria-hidden': 'true' }, mark) : null, label],
   );
 }
 
@@ -454,7 +459,7 @@ function optionPicker(item, row) {
           'span',
           {},
           h('span', { class: 'choice-label' }, option.label),
-          option.recommended ? h('span', { class: 'reco' }, t('recommended')) : null,
+          option.recommended ? h('span', { class: 'reco' }, h('span', { 'aria-hidden': 'true' }, '★ '), t('recommended')) : null,
           option.description ? h('span', { class: 'choice-note' }, option.description) : null,
         ),
       ),
@@ -468,11 +473,11 @@ function commentBox(item, row) {
   return h(
     'div',
     {},
-    h('label', { for: id, class: 'note' }, t('commentLabel')),
+    h('label', { for: id, class: 'note' }, t(item.kind === 'question' ? 'commentLabel' : 'noteLabel')),
     h('textarea', {
       id,
       'data-fk': id,
-      placeholder: t('commentPlaceholder'),
+      placeholder: t(item.kind === 'question' ? 'commentPlaceholder' : 'notePlaceholder'),
       value: draft.comment,
       oninput: (event) => {
         draft.comment = event.target.value;
@@ -488,7 +493,73 @@ function commentBox(item, row) {
   );
 }
 
+// How a script ended, in one line.
+function runSummary(run) {
+  if (run.state === 'running') return t('running');
+  if (run.error) return t('runFailed', { error: run.error });
+  if (run.signal) return t('runStopped', { signal: run.signal });
+  return t('runExit', { code: run.exitCode });
+}
+
+// Tells screen readers through the page's one live region when a run ends.
+function announceRunEnds(items) {
+  for (const item of items) {
+    const before = state.items.find((old) => old.id === item.id);
+    if (before?.run?.state === 'running' && item.run?.state === 'finished') live.textContent = `${item.title}: ${runSummary(item.run)}`;
+  }
+}
+
+// Shows a word that holds spaces or shell signs in quotes, so the line reads as typed.
+function shellWord(word) {
+  return /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
+}
+
+function scriptView(item) {
+  const { command, cwd } = item.script;
+  const run = item.run;
+  const failed = run?.state === 'finished' && (run.error || run.signal || run.exitCode !== 0);
+  return h(
+    'div',
+    { class: 'script' },
+    h('p', { class: 'note' }, t('scriptIntro')),
+    h('pre', { class: 'script-command' }, h('code', {}, command.map(shellWord).join(' '))),
+    h('p', { class: 'note' }, t('scriptFolder'), ' ', h('code', {}, cwd)),
+    run
+      ? h(
+          'div',
+          { class: 'run' },
+          h(
+            'p',
+            { class: `run-state${failed ? ' bad' : run.state === 'finished' ? ' good' : ''}` },
+            run.state === 'running' ? h('progress', { 'aria-label': t('running') }) : null,
+            runSummary(run),
+          ),
+          h('pre', { class: 'run-output', tabindex: '0', 'data-out': item.id, 'aria-label': t('runOutput') }, run.output || t('noOutput')),
+        )
+      : null,
+  );
+}
+
+function scriptActions(item) {
+  const remove = button(item, { label: t('remove'), kind: 'quiet', action: 'dismiss', body: {} });
+  if (item.run?.state === 'running') return h('div', { class: 'actions' }, button(item, { label: t('stop'), kind: 'danger', action: 'stop', body: {} }));
+  if (item.status === 'answered') {
+    return h(
+      'div',
+      { class: 'actions' },
+      button(item, { label: t('complete'), kind: 'primary', action: 'close', body: {} }),
+      button(item, { label: t('runAgain'), action: 'run', body: {} }),
+      remove,
+    );
+  }
+  const setAside = item.laterAt
+    ? button(item, { label: t('backToWaiting'), action: 'later', body: { later: false } })
+    : button(item, { label: t('later'), action: 'later', body: { later: true } });
+  return h('div', { class: 'actions' }, button(item, { label: t('run'), kind: 'primary', action: 'run', body: {} }), setAside, remove);
+}
+
 function openControls(item, row) {
+  if (item.kind === 'script') return [scriptActions(item)];
   const draft = draftFor(item.id);
   const hasComment = draft.comment.trim().length > 0;
   const comment = () => draftFor(item.id).comment.trim();
@@ -504,8 +575,8 @@ function openControls(item, row) {
       h(
         'div',
         { class: 'actions' },
-        button(item, { label: t('approve'), kind: 'primary', action: 'answer', body: () => ({ decision: 'approved', comment: comment() }) }),
-        button(item, { label: t('reject'), kind: 'danger', action: 'answer', body: () => ({ decision: 'rejected', comment: comment() }) }),
+        button(item, { label: item.yes || t('approve'), mark: '✓', kind: 'ok', action: 'answer', body: () => ({ decision: 'approved', comment: comment() }) }),
+        button(item, { label: item.no || t('reject'), mark: '✕', kind: 'danger', action: 'answer', body: () => ({ decision: 'rejected', comment: comment() }) }),
         commentButton,
         removeButton,
       ),
@@ -517,8 +588,8 @@ function openControls(item, row) {
       h(
         'div',
         { class: 'actions' },
-        button(item, { label: t('markDone'), kind: 'primary', action: 'answer', body: () => ({ decision: 'done', comment: comment() }) }),
-        button(item, { label: t('cantDo'), action: 'answer', body: () => ({ decision: 'blocked', comment: comment() }) }),
+        button(item, { label: t('markDone'), mark: '✓', kind: 'ok', action: 'answer', body: () => ({ decision: 'done', comment: comment() }) }),
+        button(item, { label: t('cantDo'), mark: '✕', action: 'answer', body: () => ({ decision: 'blocked', comment: comment() }) }),
         commentButton,
         removeButton,
       ),
@@ -532,7 +603,8 @@ function openControls(item, row) {
 
 function answerLine(item) {
   if (!item.answer) return null;
-  const parts = [h('strong', {}, t(`decision_${item.answer.decision}`))];
+  const custom = { approved: item.yes, rejected: item.no }[item.answer.decision];
+  const parts = [h('strong', {}, custom || t(`decision_${item.answer.decision}`))];
   if (item.answer.choices.length) parts.push(`: ${item.answer.choices.join(', ')}`);
   return h('div', { class: 'answer-line' }, parts, item.answer.comment ? h('div', {}, item.answer.comment) : null);
 }
@@ -692,6 +764,7 @@ function mergeControls() {
 }
 
 function resolvedControls(item) {
+  if (item.kind === 'script' && item.status === 'answered') return [scriptActions(item)];
   if (item.status === 'answered') {
     return [
       h(
@@ -750,6 +823,19 @@ function kindIcon(kind) {
   return h('span', { class: 'kind-icon' }, svg);
 }
 
+// The chat that asked, by the name in the Claude sidebar, with a link that opens it.
+// It sits in the open row, because the row head is itself a button.
+function chatPlace(item) {
+  if (!item.chatLink) return null;
+  const title = item.chatTitle || item.chat || t('openChatUntitled');
+  return h(
+    'p',
+    { class: 'chat-place' },
+    h('a', { href: item.chatLink }, t('openChat', { title })),
+    item.account ? h('span', { class: 'chat-account' }, t('chatAccount', { account: item.account })) : null,
+  );
+}
+
 function renderRow(item, index) {
   const isOpen = state.selected === item.id;
   const row = () => document.querySelector(`[data-item="${item.id}"]`);
@@ -762,7 +848,7 @@ function renderRow(item, index) {
     h('span', { class: `badge badge-${projectHue(item.project)}` }, projectLabel(item.project)),
     h('span', { class: 'tag' }, t(KIND_LABEL[item.kind])),
     item.urgent ? h('span', { class: 'tag urgent' }, t('urgent')) : null,
-    item.chat ? h('span', {}, item.chat) : null,
+    item.chatTitle || item.chat ? h('span', {}, item.chatTitle || item.chat) : null,
     item.agent ? h('span', {}, item.agent) : null,
     h('time', { datetime: item.createdAt }, `${stamp(item.createdAt)} (${relative(item.createdAt)})`),
     progress ? h('span', { class: `state state-${progress.tone}` }, progress.label) : null,
@@ -799,6 +885,8 @@ function renderRow(item, index) {
         'div',
         { class: 'detail', 'data-copy-item': item.id },
         item.body ? markdown(item.body) : null,
+        item.script ? scriptView(item) : null,
+        chatPlace(item),
         copyButton(item),
         timeline(item),
         item.status === 'open' ? h('p', { class: `note${item.agentWaiting ? ' live' : ''}` }, item.agentWaiting ? t('chatWaiting') : t('chatAway')) : null,
@@ -987,6 +1075,56 @@ function writingLanguageControl() {
   )];
 }
 
+// Connecting this computer to an askito.net account. The server does the
+// pairing; the page shows the code, a link to the website and then asks again
+// until the website says Allow.
+let cloudTimer = null;
+
+async function cloudAction(route) {
+  try {
+    state.error = null;
+    const before = state.cloud;
+    state.cloud = await request(route === 'view' ? 'GET' : 'POST', route === 'view' ? '/api/cloud' : `/api/cloud/${route}`, route === 'view' ? undefined : {});
+    if (before?.on === false && state.cloud.on) live.textContent = t('cloudConnected');
+    if (before?.on && !state.cloud.on) live.textContent = t('cloudDisconnected');
+  } catch {
+    if (route !== 'view') state.error = { id: 'cloud', message: t('errorGeneric') };
+  }
+  clearTimeout(cloudTimer);
+  if (state.cloud?.pairing?.state === 'pending') cloudTimer = setTimeout(() => cloudAction('view'), 3000);
+  render();
+}
+
+function cloudControl() {
+  const cloud = state.cloud;
+  if (!cloud) return null;
+  const failed = state.error?.id === 'cloud' ? h('p', { class: 'error', role: 'alert' }, state.error.message) : null;
+  const pairing = cloud.pairing ?? { state: 'idle' };
+  let body;
+  if (cloud.on) {
+    body = [
+      h('p', {}, cloud.email ? t('cloudOnAs', { email: cloud.email }) : t('cloudOn')),
+      cloud.lastError ? h('p', {}, t('cloudLastError', { error: cloud.lastError })) : null,
+      h('button', { type: 'button', class: 'btn quiet', onclick: () => cloudAction('disconnect') }, t('cloudDisconnect')),
+    ];
+  } else if (pairing.state === 'pending') {
+    body = [
+      h('p', {}, t('cloudCodeIntro')),
+      h('p', { class: 'cloud-code' }, pairing.userCode),
+      pairing.verifyUrl ? h('a', { href: pairing.verifyUrl, target: '_blank', rel: 'noopener noreferrer', class: 'btn primary' }, t('cloudOpenSite')) : null,
+      h('p', {}, t('cloudWaiting')),
+      h('button', { type: 'button', class: 'btn quiet', onclick: () => cloudAction('cancel') }, t('cloudCancel')),
+    ];
+  } else {
+    body = [
+      h('p', {}, t('cloudOffHint')),
+      pairing.state === 'failed' ? h('p', { class: 'error', role: 'alert' }, t('cloudFailed', { error: pairing.error })) : null,
+      h('button', { type: 'button', class: 'btn', disabled: pairing.state === 'starting', onclick: () => cloudAction('connect') }, t('cloudConnect')),
+    ];
+  }
+  return h('section', { class: 'cloud', 'aria-labelledby': 'cloud-title' }, h('h2', { id: 'cloud-title' }, t('cloudTitle')), failed, body);
+}
+
 function renderSide() {
   const counts = new Map();
   for (const item of state.items) {
@@ -1029,6 +1167,7 @@ function renderSide() {
       'div',
       { class: 'side-foot' },
       mergeControls(),
+      cloudControl(),
       notificationButton(),
       h('div', { class: 'shortcuts' }, shortcutHint()),
       h(
@@ -1201,7 +1340,10 @@ function render() {
   const focusKey = active?.dataset?.fk;
   const range = focusKey ? [active.selectionStart, active.selectionEnd] : null;
   const scroll = window.scrollY;
+  // Script output stays pinned to its end while it grows, unless the reader scrolled up.
+  const outputs = new Map([...app.querySelectorAll('[data-out]')].map((el) => [el.dataset.out, el.scrollHeight - el.scrollTop - el.clientHeight < 8 ? null : el.scrollTop]));
   app.replaceChildren(h('div', { class: 'shell' }, renderSide(), renderMain()));
+  for (const el of app.querySelectorAll('[data-out]')) el.scrollTop = outputs.get(el.dataset.out) ?? el.scrollHeight;
   if (focusKey) {
     const target = document.querySelector(`[data-fk="${focusKey}"]`);
     if (target) {
@@ -1263,6 +1405,8 @@ async function start() {
   // language is not a choice; the key is new so an older pick does not stick.
   await loadLanguage(storage.get(LANGUAGE_KEY) ?? 'en');
   state.settings = await request('GET', '/api/settings').catch(() => null);
+  state.cloud = await request('GET', '/api/cloud').catch(() => null);
+  if (state.cloud?.pairing?.state === 'pending') cloudTimer = setTimeout(() => cloudAction('view'), 3000);
   await refresh();
   render();
   openFromAddress();

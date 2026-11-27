@@ -75,6 +75,8 @@ async function followUps(input) {
   const here = detectContext(input.cwd || process.cwd());
   const query = new URLSearchParams({ session: input.session_id, project: here.project });
   if (here.chat) query.set('chat', here.chat);
+  if (here.chatTitle) query.set('chatTitle', here.chatTitle);
+  if (here.chatLink) query.set('chatLink', here.chatLink);
   if (here.agent) query.set('agent', here.agent);
   const { uncollected, unreported, orphans } = await api('GET', `/api/followups?${query}`);
   const parts = [];

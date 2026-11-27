@@ -91,6 +91,27 @@ test('approving posts the answer as the browser would', async ($, on) => {
   await ui.unmount()
 })
 
+test('an approval shows its own button words, green for yes and red for no', async ($, on) => {
+  await start($, on, { items: [{ ...ITEM, yes: 'Yes, run it', no: 'No, wait' }] })
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'toggle-abc123' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  const yes = await ui.find({ type: 'Text', text: '✓ Yes, run it' })
+  const no = await ui.find({ type: 'Text', text: '✕ No, wait' })
+  expect(yes?.props.color).toBe('success')
+  expect(no?.props.color).toBe('error')
+  await ui.unmount()
+})
+
+test('an approval without its own words falls back to Approve', async ($, on) => {
+  await start($, on)
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'toggle-abc123' })
+  for (let i = 0; i < 100; i += 1) await Promise.resolve()
+  expect((await ui.find({ type: 'Text', text: '✓ Approve' }))?.props.color).toBe('success')
+  await ui.unmount()
+})
+
 test('Later sets the item aside', async ($, on) => {
   const sent = await start($, on)
   const ui = await $.ui.mount(PANE)
@@ -225,6 +246,19 @@ test('the title itself opens the row, with no separate open button', async ($, o
   await start($, on)
   const ui = await $.ui.mount(PANE)
   expect((await ui.find({ key: 'toggle-abc123' }))?.text).toBe('Run the migration?')
+  await ui.unmount()
+})
+
+test('an open item names its chat as the sidebar does, with a link that opens it', async ($, on) => {
+  const chatLink = 'claude://claude.ai/epitaxy/local_0325ae8d-01dd-48a2-a61d-6ab717343e71'
+  const sent = await start($, on, { items: [{ ...ITEM, chat: 'made-up name', chatTitle: 'Multi-chat app', chatLink }] })
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /Multi-chat app/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /made-up name/ })).toBeUndefined()
+  await ui.press({ key: 'toggle-abc123' })
+  expect((await ui.find({ key: 'chat-abc123' }))?.props?.label).toContain('Multi-chat app')
+  await ui.press({ key: 'chat-abc123' })
+  expect(sent.at(-1)?.url).toContain('/api/items/abc123/chat')
   await ui.unmount()
 })
 

@@ -25,11 +25,31 @@ const TOOLS = [
           items: { type: 'object', required: ['label'], properties: { label: { type: 'string' }, description: { type: 'string' }, recommended: { type: 'boolean' } } },
         },
         multi: { type: 'boolean', description: 'Allow more than one option.' },
+        yes: { type: 'string', description: 'For an approval: the approve button, in words that answer the title, such as "Yes, delete the 40 lines". Up to 60 characters, in the language you write the title in.' },
+        no: { type: 'string', description: 'For an approval: the reject button, such as "No, leave them". Up to 60 characters.' },
         urgent: { type: 'boolean', description: 'Sort to the top. Use only when work is fully blocked.' },
         chat: { type: 'string', description: 'Short name of this chat or work stream.' },
         project: { type: 'string', description: 'Project name. Leave empty to detect it from cwd.' },
         key: { type: 'string', description: 'Stable id for this request, so a retry does not create a duplicate.' },
         cwd: cwdField,
+      },
+    },
+  },
+  {
+    name: 'askito_script',
+    description:
+      'Put a script the human has to run into their inbox, where one click runs it and shows its output. Always write the same command in your chat as well, in a bash code block. In the chat, say only that the script is waiting, with the askito #N line; never copy the command into a task. The command runs with no shell, so no pipes, && or redirects: name a script file instead. askito_wait returns the output and exit code once it has run.',
+    inputSchema: {
+      type: 'object',
+      required: ['title', 'command', 'cwd'],
+      properties: {
+        title: { type: 'string', description: 'What the script does, in one line.' },
+        command: { type: 'array', items: { type: 'string' }, description: 'The program and its arguments, one per entry, such as ["python3", "scripts/owner/price.py", "--apply"].' },
+        cwd: { type: 'string', description: 'Absolute path of the folder the script runs in.' },
+        body: { type: 'string', description: 'What it changes and why the human runs it. Markdown.' },
+        chat: { type: 'string', description: 'Short name of this chat or work stream.' },
+        project: { type: 'string', description: 'Project name. Leave empty to detect it from cwd.' },
+        key: { type: 'string', description: 'Stable id for this request, so a retry does not create a duplicate.' },
       },
     },
   },
@@ -110,12 +130,35 @@ const handlers = {
       ...args,
       project: args.project || context.project,
       chat: args.chat || context.chat,
+      chatTitle: context.chatTitle,
+      chatLink: context.chatLink,
+      account: context.account,
       agent: context.agent,
       cwd: context.cwd,
       sessionId: context.session,
     });
     const id = item.number ?? item.id;
     return `Posted to the inbox. id: ${id}\nTell the user in chat: ${itemRef(item)} ${itemLink(item)}\nCall askito_wait with this id to get the answer.`;
+  },
+  async askito_script(args) {
+    const context = detectContext(args.cwd || process.cwd());
+    const { item } = await api('POST', '/api/items', {
+      kind: 'script',
+      title: args.title,
+      body: args.body,
+      command: args.command,
+      cwd: args.cwd,
+      key: args.key,
+      project: args.project || context.project,
+      chat: args.chat || context.chat,
+      chatTitle: context.chatTitle,
+      chatLink: context.chatLink,
+      account: context.account,
+      agent: context.agent,
+      sessionId: context.session,
+    });
+    const id = item.number ?? item.id;
+    return `Posted to the inbox. id: ${id}\nTell the user in chat: the script is waiting, ${itemRef(item)} ${itemLink(item)}\nShow the same command in your chat as a bash code block too. Call askito_wait with this id to get the output and exit code.`;
   },
   async askito_wait({ ids, timeout_seconds: seconds = 50 }) {
     if (!Array.isArray(ids) || !ids.length) throw new Error('ids is required');
@@ -166,7 +209,7 @@ async function handle(message) {
       protocolVersion: params?.protocolVersion ?? '2025-06-18',
       capabilities: { tools: {} },
       serverInfo: { name: 'askito', version: VERSION },
-      instructions: 'Use askito_ask for any question, approval or task for the human, instead of asking in chat. Then askito_wait for the answer.',
+      instructions: 'Use askito_ask for any question, approval or task for the human, instead of asking in chat. Then askito_wait for the answer. For a script the human must run, show the command in chat and post it with askito_script, which gives them a Run button.',
     };
   }
   if (method === 'ping') return {};

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const KINDS = ['question', 'approval', 'task'];
+export const KINDS = ['question', 'approval', 'task', 'script'];
 export const FIRST_RUN_KEY = 'first-run-broadcast';
 // An answer nobody has picked up for this long may go to another chat.
 const ORPHAN_MS = 10 * 60 * 1000;
@@ -13,9 +13,32 @@ const DECISIONS = {
   question: ['option', 'comment'],
   approval: ['approved', 'rejected', 'comment'],
   task: ['done', 'blocked', 'comment'],
+  // "ran" is set by the inbox when the script finishes, never sent as an answer.
+  script: ['rejected', 'comment'],
 };
 
-const LIMITS = { title: 300, body: 20000, comment: 20000, options: 12, label: 200, description: 500, meta: 200 };
+const LIMITS = { title: 300, body: 20000, comment: 20000, options: 12, label: 200, description: 500, meta: 200, args: 50, arg: 4000, buttons: 60 };
+// The tail of a script's output kept on the item. Older output is cut off.
+export const MAX_OUTPUT = 64000;
+
+// A script is a program and its arguments, run with no shell in between, so
+// nothing in it is expanded or chained. It runs in an absolute folder.
+function scriptFields(input) {
+  const command = input.command;
+  if (!Array.isArray(command) || !command.length) throw invalid('a script needs command: the program and its arguments, such as ["bash", "scripts/check.sh"]');
+  if (command.length > LIMITS.args) throw invalid(`a script takes at most ${LIMITS.args} arguments`);
+  for (const part of command) {
+    if (typeof part !== 'string' || !part.length) throw invalid('every part of command must be a non-empty string');
+    if (part.length > LIMITS.arg) throw invalid(`a command part is longer than ${LIMITS.arg} characters`);
+  }
+  const cwd = text(input.cwd, 'cwd', 1000, { required: true });
+  if (!path.isAbsolute(cwd)) throw invalid('a script needs the full path of the folder it runs in (cwd)');
+  return { command: [...command], cwd: path.normalize(cwd) };
+}
+
+function keepTail(output) {
+  return output.length > MAX_OUTPUT ? output.slice(output.length - MAX_OUTPUT) : output;
+}
 const ID_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 
 export class HttpError extends Error {
@@ -27,6 +50,20 @@ export class HttpError extends Error {
 }
 
 const invalid = (message) => new HttpError(400, 'invalid_request', message);
+
+// Where the asking chat lives: its name in the Claude app's sidebar, a link
+// that opens it there, and the account it runs under. The page puts the link
+// in an href, so only the app's own address form gets through.
+const CHAT_LINK = /^claude:\/\/claude\.ai\/epitaxy\/local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+function chatPlace(input) {
+  const chatLink = text(input.chatLink, 'chatLink', LIMITS.meta);
+  if (chatLink && !CHAT_LINK.test(chatLink)) throw invalid('chatLink must be a claude://claude.ai/epitaxy/local_… address');
+  return {
+    chatTitle: text(input.chatTitle, 'chatTitle', LIMITS.meta),
+    chatLink,
+    account: text(input.account, 'account', LIMITS.meta),
+  };
+}
 
 function text(value, name, max, { required = false } = {}) {
   if (value === undefined || value === null || value === '') {
@@ -133,6 +170,10 @@ export class Store extends EventEmitter {
       this.items.clear();
     }
     this.numberItems();
+    // A script cannot outlive the inbox that ran it.
+    for (const item of this.items.values()) {
+      if (item.run?.state === 'running') this.finishRun(item.id, { error: 'askito stopped while the script ran' });
+    }
   }
 
   // Every item gets a short number (#42) that people can read and type. Items
@@ -213,14 +254,23 @@ export class Store extends EventEmitter {
       urgent: input.urgent === true,
       project: text(input.project, 'project', LIMITS.meta) ?? 'unsorted',
       chat: text(input.chat, 'chat', LIMITS.meta),
+      ...chatPlace(input),
       agent: text(input.agent, 'agent', LIMITS.meta),
       cwd: text(input.cwd, 'cwd', 1000),
       sessionId: text(input.sessionId, 'sessionId', LIMITS.meta),
       key: text(input.key, 'key', LIMITS.meta),
     };
+    if (kind === 'script') fields.script = scriptFields(input);
+    if (kind === 'approval') {
+      // Buttons that answer the question in its own words, such as "Yes, delete" and "No, keep it".
+      fields.yes = text(input.yes, 'yes', LIMITS.buttons);
+      fields.no = text(input.no, 'no', LIMITS.buttons);
+    } else if (input.yes != null || input.no != null) {
+      throw invalid('yes and no only apply to kind "approval"');
+    }
 
     fields.project = this.projectMap[fields.project] ?? fields.project;
-    this.touchSession({ id: fields.sessionId, project: fields.project, chat: fields.chat, agent: fields.agent });
+    this.touchSession({ id: fields.sessionId, project: fields.project, chat: fields.chat, agent: fields.agent, chatTitle: fields.chatTitle, chatLink: fields.chatLink });
 
     // A retrying agent must not create a second copy of the same request.
     if (fields.key) {
@@ -257,6 +307,42 @@ export class Store extends EventEmitter {
     item.status = 'answered';
     item.deliveredAt = null;
     item.messages.push({ from: 'human', decision, choices, text: comment, at });
+    this.changed('answered', item);
+    return item;
+  }
+
+  // The person pressed Run. A script runs again only after its last run finished.
+  startRun(id) {
+    const item = this.get(id);
+    if (item.kind !== 'script') throw new HttpError(400, 'not_a_script', 'only script items run');
+    if (item.run?.state === 'running') throw new HttpError(409, 'running', 'this script is already running');
+    const rerun = item.status === 'answered' && item.answer?.decision === 'ran';
+    if (item.status !== 'open' && !rerun) throw new HttpError(409, 'not_open', 'this item is closed');
+    item.run = { state: 'running', startedAt: new Date().toISOString(), endedAt: null, exitCode: null, signal: null, error: null, output: '' };
+    item.laterAt = null;
+    this.changed('run', item);
+    return item;
+  }
+
+  appendRun(id, chunk) {
+    const item = this.get(id);
+    if (item.run?.state !== 'running' || !chunk) return item;
+    item.run.output = keepTail(item.run.output + chunk);
+    this.changed('output', item);
+    return item;
+  }
+
+  // The run is the answer: the chat collects the exit code and the output.
+  finishRun(id, { exitCode = null, signal = null, error = null } = {}) {
+    const item = this.get(id);
+    if (item.run?.state !== 'running') return item;
+    const at = new Date().toISOString();
+    Object.assign(item.run, { state: 'finished', endedAt: at, exitCode, signal, error });
+    const summary = error ? `could not start: ${error}` : signal ? `stopped (${signal})` : `exit code ${exitCode}`;
+    item.answer = { decision: 'ran', choices: [], comment: null, exitCode, at };
+    item.status = 'answered';
+    item.deliveredAt = null;
+    item.messages.push({ from: 'human', decision: 'ran', choices: [], text: summary, at });
     this.changed('answered', item);
     return item;
   }
@@ -334,16 +420,30 @@ export class Store extends EventEmitter {
     return item;
   }
 
-  touchSession({ id, project, chat, agent, now = Date.now() }) {
+  touchSession({ id, project, chat, agent, chatTitle, chatLink, now = Date.now() }) {
     if (!id) return;
     const session = this.sessions.get(id) ?? { id };
+    const place = chatPlace({ chatTitle, chatLink });
     this.sessions.set(id, {
       ...session,
       project: project ?? session.project ?? null,
       chat: chat ?? session.chat ?? null,
+      chatTitle: place.chatTitle ?? session.chatTitle ?? null,
+      chatLink: place.chatLink ?? session.chatLink ?? null,
       agent: agent ?? session.agent ?? null,
       lastSeen: new Date(now).toISOString(),
     });
+    // The app renames a chat after its first turns. Items it posted earlier,
+    // including ones from before askito knew the name, follow the sidebar.
+    for (const item of this.items.values()) {
+      if (item.sessionId !== id) continue;
+      const title = place.chatTitle && item.chatTitle !== place.chatTitle;
+      const link = place.chatLink && !item.chatLink;
+      if (!title && !link) continue;
+      if (title) item.chatTitle = place.chatTitle;
+      if (link) item.chatLink = place.chatLink;
+      this.changed('renamed', item);
+    }
     this.persist();
   }
 

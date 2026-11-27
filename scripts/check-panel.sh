@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Checks the Claude panel plugin the way Claude Code will load it.
+# Checks the Claude Code panel mod: the engine's validator, then its tests if it has any.
 # Usage: bash scripts/check-panel.sh
 set -euo pipefail
-root="$(cd "$(dirname "$0")/.." && pwd)"
-claude plugin validate "$root/plugins/askito-panel"
+cd "$(dirname "$0")/.."
+claude plugin validate plugins/askito-panel
+if compgen -G "plugins/askito-panel/hooks/*.test.ts*" > /dev/null; then
+  claude plugin test plugins/askito-panel
+fi

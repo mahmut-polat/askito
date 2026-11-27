@@ -11,6 +11,7 @@
   --danger: #a8241c;
   --danger-text: #ffffff;
   --ok: #2a6339;
+  --ok-text: #ffffff;
   --brand: #1453e8;
   --focus: #1f5fbf;
   --kind-question: #1f5fbf;
@@ -19,6 +20,8 @@
   --kind-approval-soft: #f4e8d0;
   --kind-task: #6a2fa0;
   --kind-task-soft: #efe5fa;
+  --kind-script: #0b5d78;
+  --kind-script-soft: #dceef5;
   --kind-link: #0f6e5a;
   --kind-link-soft: #dcf1ea;
   --row-num: 44px;
@@ -49,6 +52,7 @@
   --danger: #f2867e;
   --danger-text: #2a0705;
   --ok: #86c896;
+  --ok-text: #0d2414;
   --brand: #7fa8ff;
   --focus: #7fb2ff;
   --kind-question: #8ab8ff;
@@ -57,6 +61,8 @@
   --kind-approval-soft: #3a2e15;
   --kind-task: #c9a2f0;
   --kind-task-soft: #33234a;
+  --kind-script: #7cc9e6;
+  --kind-script-soft: #12313d;
   --kind-link: #6fd3b8;
   --kind-link-soft: #163a31;
   color-scheme: dark;
@@ -189,6 +195,33 @@ textarea {
   gap: var(--space-3);
   font-size: 12px;
   color: var(--muted);
+}
+
+.cloud {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.cloud h2 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.cloud p {
+  margin: 0;
+}
+
+.cloud .btn {
+  min-height: 32px;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.cloud-code {
+  font: 600 20px var(--mono);
+  letter-spacing: 0.12em;
+  color: var(--text);
 }
 
 .notify-on {
@@ -350,6 +383,11 @@ kbd {
 .row.kind-approval {
   --kind: var(--kind-approval);
   --kind-soft: var(--kind-approval-soft);
+}
+
+.row.kind-script {
+  --kind: var(--kind-script);
+  --kind-soft: var(--kind-script-soft);
 }
 
 .row.kind-task {
@@ -876,7 +914,11 @@ kbd {
   margin-inline-start: var(--space-2);
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--ok);
+}
+
+.choice:has(.reco) {
+  box-shadow: inset 3px 0 0 var(--ok);
 }
 
 textarea {
@@ -929,6 +971,21 @@ textarea {
   filter: brightness(1.1);
 }
 
+.btn.ok {
+  border-color: var(--ok);
+  background: var(--ok);
+  color: var(--ok-text);
+}
+
+.btn.ok:hover:not(:disabled) {
+  background: var(--ok);
+  filter: brightness(1.1);
+}
+
+.btn-mark {
+  margin-inline-end: var(--space-1);
+}
+
 .btn.danger {
   border-color: var(--danger);
   background: var(--danger);
@@ -944,6 +1001,44 @@ textarea {
   margin-inline-start: auto;
   border-color: transparent;
   color: var(--muted);
+}
+
+.script-command,
+.run-output {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font: 13px/1.45 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.run-output {
+  max-block-size: 24rem;
+  overflow: auto;
+}
+
+.run-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-3) var(--space-2);
+  font-weight: 600;
+}
+
+.run-state.good {
+  color: var(--ok);
+}
+
+.run-state.bad {
+  color: var(--danger);
+}
+
+.run-state progress {
+  inline-size: 6rem;
+  accent-color: var(--kind-script);
 }
 
 .answer-line {
@@ -963,6 +1058,17 @@ textarea {
 .note.live {
   color: var(--ok);
   font-weight: 600;
+}
+
+.chat-place {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 13px;
+}
+
+.chat-account {
+  color: var(--muted);
 }
 
 .error {

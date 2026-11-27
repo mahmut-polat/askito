@@ -134,6 +134,12 @@ export function itemRef(item) {
 export function formatItem(item) {
   const lines = [`id: ${item.number ?? item.id}`, `title: ${item.title}`, `status: ${item.status}`, `link: ${itemLink(item)}`];
   if (item.key) lines.push(`key: ${item.key}`);
+  if (item.script) lines.push(`command: ${item.script.command.join(' ')}`, `cwd: ${item.script.cwd}`);
+  if (item.run) {
+    const { state, exitCode, signal, error, output } = item.run;
+    lines.push(`run: ${state === 'running' ? 'running' : error ? `could not start: ${error}` : signal ? `stopped (${signal})` : `exit code ${exitCode}`}`);
+    if (output) lines.push('output:', output.trimEnd());
+  }
   if (item.answer) {
     lines.push(`decision: ${item.answer.decision}`);
     if (item.answer.choices.length) lines.push(`choices: ${item.answer.choices.join(' | ')}`);

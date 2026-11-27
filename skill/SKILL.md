@@ -1,13 +1,13 @@
 ---
 name: askito
-description: Mandatory channel for questions, approvals and human-only tasks. Send them to the user's askito inbox and never ask in chat. Use whenever you need a decision, a go-ahead, missing information, or something only the user can do (log in, pay, sign, click, press a physical button). Also opens the inbox page when the user types /askito.
+description: Mandatory channel for questions, approvals and human-only tasks. Send them to the user's askito inbox and never ask in chat. Use whenever you need a decision, a go-ahead, missing information, or something only the user can do (log in, pay, sign, click, press a physical button), or a script the user should run. Also opens the inbox page when the user types /askito.
 ---
 
 # askito
 
 The user runs many AI chats at once and answers all of them from one local inbox page. Posting there is mandatory: do not ask questions in the chat, and do not use chat question tools such as AskUserQuestion or end-of-turn buttons.
 
-The command on this machine is `~/.askito/bin/askito`. MCP clients also have the same actions as `askito_ask`, `askito_wait`, `askito_pickup`, `askito_ack`, `askito_reply`, `askito_progress`, `askito_done` and `askito_link`.
+The command on this machine is `~/.askito/bin/askito`. MCP clients also have the same actions as `askito_ask`, `askito_script`, `askito_wait`, `askito_pickup`, `askito_ack`, `askito_reply`, `askito_progress`, `askito_done` and `askito_link`.
 
 ## When the user types `/askito`
 
@@ -22,18 +22,36 @@ If the user runs this skill directly with no other task, or asks to open the inb
   --option "Read cache::Fresh, adds Redis" \
   --recommend 1 --chat "reports speedup" --wait
 
-~/.askito/bin/askito approve "Run the production migration?" --body "Adds one column. Takes about 2 s." --wait
+~/.askito/bin/askito approve "Run the production migration?" --body "Adds one column. Takes about 2 s." \
+  --yes "Yes, run it now" --no "No, wait" --wait
 
 ~/.askito/bin/askito task "Accept the Apple agreement" --body "App Store Connect, Business page. Uploads fail until this is done." --wait
 ```
 
 Write for someone who has not seen this chat. The title is the decision or the action. The body says what you found, what each choice costs, and what you recommend. Give `--chat` a short name for your work so the user can tell chats apart.
 
+An approval gets its own button words with `--yes` and `--no`, phrased as answers to the title ("Yes, delete the 40 lines", "No, keep them"), in the language you write the title in. Plain "Approve" and "Reject" leave the user guessing what each one does. Up to 60 characters each.
+
 The project is detected from the git repository. Use `--project` only when the detected name is wrong.
 
 Use `--key <stable-id>` when you might retry, so the user gets one item instead of two. Use `--urgent` only when all your work is blocked.
 
 Ask one thing per item. Several questions or jobs mean several items, never one item with a list inside, because the user answers, sets aside and tracks each one on its own.
+
+## Scripts the user runs
+
+A command or script the user has to run on this computer always stays in the chat, as its own `bash` code block, so the chat's Run button works. Never put the command in the body of an askito item, and never post a `task` for it.
+
+Post a script item with the same command instead. It tells the user that a script is waiting in this chat, and its Run button starts the command on this computer and shows the output and exit code in the inbox and the Claude panel:
+
+```bash
+~/.askito/bin/askito script "Renew the signing certificate" --chat "release" \
+  --cwd ~/Projects/app --wait -- bash scripts/owner/renew-cert.sh --year 2027
+```
+
+Everything after `--` is the program and its arguments. There is no shell, so pipes, `&&` and redirects do not work: name a script file. `--cwd` is the folder it runs in and defaults to the current one. With MCP, call `askito_script` with `command` as an array.
+
+Only the user can start it. When it finishes, the answer is `decision: ran` with `exitCode`, and `askito show ID` prints the output. Read the output, then `done` the item with what came of it. If the user ran the command in the chat instead, `done` the item yourself so it does not stay open.
 
 ## Item numbers
 
@@ -62,6 +80,7 @@ The result has `decision`, and may have `choices` and `comment`:
 | `option` | The user picked `choices`. |
 | `approved` / `rejected` | Go ahead, or do not. |
 | `done` / `blocked` | The user finished the task, or could not. |
+| `ran` | The user ran the script. `exitCode` says how it ended, and `askito show ID` prints the output. |
 | `comment` | The user wrote `comment` instead of choosing. Follow it, or ask again with `reply`. |
 | `dismissed` | The user removed the item. Do not do that work, and do not ask again. |
 
