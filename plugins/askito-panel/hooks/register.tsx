@@ -122,7 +122,11 @@ function chatName(item: { chatTitle?: string | null; chat?: string | null }) {
   return item.chatTitle || item.chat || ''
 }
 
+// Closed items shown under Done, newest first; older ones are in the inbox page.
+const DONE_SHOWN = 50
+
 function chatState(item: InboxItem, t: (key: string) => string) {
+  if (item.status === 'done') return { label: t('stateClosed'), tone: 'ok' as const }
   if (!item.answer) return null
   // Say which chat, so a warning can be traced to a chat in the sidebar.
   const named = (label: string) => (chatName(item) ? `${label} (“${chatName(item)}”)` : label)
@@ -263,11 +267,16 @@ async function refresh($: EngineInterface) {
     const current = await read($, items)
     if (JSON.stringify(current) !== JSON.stringify(next)) await update($, items, () => next)
     const answered = await request($, link, '/api/items?status=answered')
-    const nextAgents = answered.ok
-      ? (JSON.parse(answered.text) as { items: InboxItem[] }).items
+    // Done holds what the user already answered, still with its chat or closed:
+    // one list, so an answered item never sits in a tab of its own.
+    const closed = await request($, link, '/api/items?status=done')
+    const inFlight = answered.ok ? (JSON.parse(answered.text) as { items: InboxItem[] }).items : null
+    const finished = closed.ok ? (JSON.parse(closed.text) as { items: InboxItem[] }).items : []
+    const nextAgents = inFlight
+      ? [...inFlight, ...finished.sort((a, b) => (b.answer?.at ?? b.createdAt).localeCompare(a.answer?.at ?? a.createdAt)).slice(0, DONE_SHOWN)]
       : await read($, agents)
     if (JSON.stringify(await read($, agents)) !== JSON.stringify(nextAgents)) await update($, agents, () => nextAgents)
-    if (answered.ok) await wake($, link, nextAgents)
+    if (inFlight) await wake($, link, inFlight)
     const linked = await request($, link, '/api/links')
     const nextLinks = linked.ok ? ((JSON.parse(linked.text) as { links?: LinkEntry[] }).links ?? []) : await read($, links)
     if (JSON.stringify(await read($, links)) !== JSON.stringify(nextLinks)) await update($, links, () => nextLinks)
@@ -715,7 +724,7 @@ export const register: Register = on => {
         </Text>
       </Box>
     )
-    const heading = mode === 'files' ? 'headFiles' : mode === 'links' ? 'headLinks' : mode === 'agents' ? 'headAgents' : 'headWaiting'
+    const heading = mode === 'files' ? 'headFiles' : mode === 'links' ? 'headLinks' : mode === 'agents' ? 'headDone' : 'headWaiting'
 
     return (
       <Box flexDirection="column" padding="md" gap="lg">
@@ -730,7 +739,7 @@ export const register: Register = on => {
         </Box>
         <Box flexDirection="row" flexWrap="wrap" gap="xs">
           {viewChip('waiting', t('tabWaiting'), list.length)}
-          {viewChip('agents', t('tabAgents'), others.length)}
+          {viewChip('agents', t('tabDone'), others.length)}
           {viewChip('links', t('tabLinks'), saved.filter(entry => !entry.path).length)}
           {viewChip('files', t('tabFiles'), saved.filter(entry => Boolean(entry.path)).length)}
         </Box>
@@ -783,10 +792,10 @@ export const register: Register = on => {
           </Box>
         ) : (
           <Box flexDirection="column" gap="xs">
-            <Text weight="semibold">{searching.trim() ? t('noMatch') : t(mode === 'agents' ? 'emptyAgentsTitle' : 'emptyWaitingTitle')}</Text>
+            <Text weight="semibold">{searching.trim() ? t('noMatch') : t(mode === 'agents' ? 'emptyDoneTitle' : 'emptyWaitingTitle')}</Text>
             {searching.trim() ? null : (
               <Text size="caption" dimColor>
-                {t(mode === 'agents' ? 'emptyAgentsBody' : 'emptyWaitingBody')}
+                {t(mode === 'agents' ? 'emptyDoneBody' : 'emptyWaitingBody')}
               </Text>
             )}
           </Box>

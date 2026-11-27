@@ -46,7 +46,7 @@ type Fetch = { url: string; init?: { method?: string; headers?: Record<string, s
 const beats: string[] = []
 const prompts: string[] = []
 
-async function start($: any, on: any, options: { installed?: boolean; items?: object[]; agents?: object[]; links?: object[]; config?: string } = {}) {
+async function start($: any, on: any, options: { installed?: boolean; items?: object[]; agents?: object[]; done?: object[]; links?: object[]; config?: string } = {}) {
   const sent: Fetch[] = []
   let open: object[] = options.items ?? [ITEM]
   on('session.id', () => ({ value: 'this-chat' }))
@@ -74,7 +74,7 @@ async function start($: any, on: any, options: { installed?: boolean; items?: ob
       open = []
       return { value: { status: 200, ok: true, headers: {}, text: '{}' } }
     }
-    const list = e.url.includes('status=answered') ? (options.agents ?? []) : open
+    const list = e.url.includes('status=answered') ? (options.agents ?? []) : e.url.includes('status=done') ? (options.done ?? []) : open
     if (e.url.includes('/i18n/')) catalogs.push(e.url)
     const text = e.url.includes('/i18n/')
       ? JSON.stringify(WORDS)
@@ -194,7 +194,7 @@ test('a project filter narrows the list', async ($, on) => {
   await ui.unmount()
 })
 
-test('With chats shows whether the answer arrived and what the chat did', async ($, on) => {
+test('Done holds answered items with what the chat did, and closed ones', async ($, on) => {
   const answered = {
     ...ITEM,
     status: 'answered',
@@ -202,11 +202,20 @@ test('With chats shows whether the answer arrived and what the chat did', async 
     deliveredAt: '2026-11-09T10:02:00.000Z',
     messages: [{ from: 'agent', kind: 'progress', text: 'Running it', at: new Date().toISOString() }],
   }
-  await start($, on, { items: [ITEM], agents: [answered] })
+  const closed = {
+    ...ITEM,
+    id: 'closed-1',
+    number: 99,
+    title: 'Already finished',
+    status: 'done',
+    answer: { decision: 'done', choices: [], comment: null, at: '2026-11-08T10:01:00.000Z' },
+  }
+  await start($, on, { items: [ITEM], agents: [answered], done: [closed] })
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'view-agents' })
   for (let i = 0; i < 100; i += 1) await Promise.resolve()
   expect((await ui.find({ type: 'Text', text: /Running it/ }))?.text).toContain('Running it')
+  expect((await ui.find({ type: 'Text', text: /Already finished/ }))?.text).toContain('Already finished')
   await ui.unmount()
 })
 

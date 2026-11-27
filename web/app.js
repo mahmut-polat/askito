@@ -6,8 +6,8 @@ const LANGUAGE_KEY = 'askito.ui-language';
 const TABS = [
   { id: 'waiting', status: 'open', label: 'tabWaiting', head: 'headWaiting', empty: 'emptyWaiting' },
   { id: 'later', status: 'open', later: true, label: 'tabLater', head: 'headLater', empty: 'emptyLater' },
-  { id: 'agents', status: 'answered', label: 'tabAgents', head: 'headAgents', empty: 'emptyAgents' },
-  { id: 'done', status: 'done', label: 'tabDone', head: 'headDone', empty: 'emptyDone' },
+  // Answered is done for the user: the chat's progress shows on the row.
+  { id: 'done', status: ['answered', 'done'], label: 'tabDone', head: 'headDone', empty: 'emptyDone' },
   { id: 'removed', status: 'dismissed', label: 'tabRemoved', head: 'headRemoved', empty: 'emptyRemoved' },
   { id: 'links', links: 'web', label: 'tabLinks', head: 'headLinks', empty: 'emptyLinks' },
   { id: 'files', links: 'file', label: 'tabFiles', head: 'headFiles', empty: 'emptyFiles' },
@@ -243,7 +243,8 @@ function projectHue(name) {
 const projectLabel = (name) => (name === 'unsorted' ? t('unsorted') : name);
 
 function inTab(item, tab) {
-  return item.status === tab.status && (tab.status !== 'open' || Boolean(item.laterAt) === Boolean(tab.later));
+  const statuses = [tab.status].flat();
+  return statuses.includes(item.status) && (item.status !== 'open' || Boolean(item.laterAt) === Boolean(tab.later));
 }
 
 function dayKey(iso) {

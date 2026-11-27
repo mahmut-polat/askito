@@ -7,6 +7,8 @@ export type InboxItem = {
   // The number people see and type, such as 42 for #42.
   number?: number
   kind: 'question' | 'approval' | 'task' | 'script'
+  // Where the item stands; Done shows answered and closed ones together.
+  status?: 'open' | 'answered' | 'done' | 'dismissed'
   title: string
   // A script item: what Run starts, and how its last run went.
   script?: { command: string[]; cwd: string } | null
