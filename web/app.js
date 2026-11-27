@@ -823,6 +823,20 @@ function kindIcon(kind) {
   return h('span', { class: 'kind-icon' }, svg);
 }
 
+// The two orange crosses of the ask++ wordmark, drawn inline because the
+// page's CSP (img-src 'self') refuses data: images.
+function brandPlus() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  for (const [name, value] of Object.entries({ class: 'brand-plus', viewBox: '0 0 54 22', 'aria-hidden': 'true' })) svg.setAttribute(name, value);
+  for (const [x, y, width, height] of [[7.5, 0, 7, 22], [0, 7.5, 22, 7], [39.5, 0, 7, 22], [32, 7.5, 22, 7]]) {
+    const bar = document.createElementNS(ns, 'rect');
+    for (const [name, value] of Object.entries({ x, y, width, height, rx: 2 })) bar.setAttribute(name, value);
+    svg.append(bar);
+  }
+  return svg;
+}
+
 // The chat that asked, by the name in the Claude sidebar, with a link that opens it.
 // It sits in the open row, because the row head is itself a button.
 function chatPlace(item) {
@@ -1161,7 +1175,7 @@ function renderSide() {
   return h(
     'aside',
     { class: 'side' },
-    h('div', { class: 'brand', role: 'img', 'aria-label': 'ask++' }, h('span', { class: 'brand-ask', 'aria-hidden': 'true' }, 'ask'), h('span', { class: 'brand-plus', 'aria-hidden': 'true' })),
+    h('div', { class: 'brand', role: 'img', 'aria-label': 'ask++' }, h('span', { class: 'brand-ask', 'aria-hidden': 'true' }, 'ask'), brandPlus()),
     h('nav', { 'aria-label': t('projects') }, h('h2', {}, t('projects')), h('ul', { class: 'projects' }, entry(null, t('allProjects'), total), names.map((name) => entry(name, projectLabel(name), counts.get(name))))),
     h(
       'div',
